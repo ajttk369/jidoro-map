@@ -534,8 +534,8 @@ export default function Home() {
         onToggleFavorites={handleToggleFavoritesView}
       />
 
-      <div className="flex min-h-dvh flex-col pt-[72px] max-lg:pt-[142px] lg:h-dvh lg:min-h-0 lg:flex-row">
-        <div className="h-[calc(100dvh-142px)] min-h-[520px] lg:order-2 lg:h-auto lg:min-h-0 lg:flex-1">
+      <div className="flex min-h-dvh flex-col pt-[118px] lg:h-dvh lg:min-h-0 lg:flex-row lg:pt-[72px]">
+        <div className="h-[calc(100dvh-118px)] min-h-[480px] lg:order-2 lg:h-auto lg:min-h-0 lg:flex-1">
           <NaverMap
             places={visiblePlaces}
             selectedPlace={selectedPlace}
@@ -551,8 +551,8 @@ export default function Home() {
           />
         </div>
 
-        <div className="fixed inset-x-0 bottom-0 z-30 flex h-[56dvh] min-h-[360px] flex-col overflow-hidden rounded-t-2xl border-t border-jidoro-line bg-white shadow-panel lg:static lg:order-1 lg:h-full lg:min-h-0 lg:flex-row lg:overflow-visible lg:rounded-none lg:border-t-0 lg:bg-transparent lg:shadow-none">
-          <div className="flex h-5 items-center justify-center bg-white lg:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-30 flex h-[52dvh] min-h-[330px] flex-col overflow-hidden rounded-t-2xl border-t border-jidoro-line bg-white shadow-panel sm:h-[56dvh] lg:static lg:order-1 lg:h-full lg:min-h-0 lg:flex-row lg:overflow-visible lg:rounded-none lg:border-t-0 lg:bg-transparent lg:shadow-none">
+          <div className="flex h-4 shrink-0 items-center justify-center bg-white lg:hidden">
             <span className="h-1 w-12 rounded-full bg-slate-300" />
           </div>
           <ModeRail
@@ -577,7 +577,7 @@ function ModeRail({
   onOpenDirections: () => void;
 }) {
   return (
-    <nav className="flex shrink-0 border-b border-jidoro-line bg-white px-2 py-2 lg:w-[72px] lg:flex-col lg:items-center lg:border-b-0 lg:border-r lg:px-0 lg:py-4">
+    <nav className="flex shrink-0 border-b border-jidoro-line bg-white px-2 py-1.5 lg:w-[72px] lg:flex-col lg:items-center lg:border-b-0 lg:border-r lg:px-0 lg:py-4">
       <ModeButton
         active={activeMode === "home"}
         icon={<HomeIcon size={19} />}
@@ -609,7 +609,7 @@ function ModeButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex h-12 min-w-[88px] flex-1 flex-col items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-extrabold transition lg:mb-2 lg:min-w-0 lg:flex-none lg:self-stretch ${
+      className={`flex h-10 min-w-[88px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-2 text-[11px] font-extrabold transition lg:mb-2 lg:h-12 lg:min-w-0 lg:flex-none lg:self-stretch ${
         active ? "bg-jidoro-blue text-white" : "text-jidoro-muted hover:bg-jidoro-surface hover:text-jidoro-ink"
       }`}
     >

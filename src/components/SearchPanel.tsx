@@ -63,8 +63,8 @@ export default function SearchPanel({
 }: SearchPanelProps) {
   return (
     <aside className="flex h-full flex-col overflow-hidden border-r border-jidoro-line bg-jidoro-surface lg:w-[400px] lg:shrink-0">
-      <div className="border-b border-jidoro-line bg-white p-4">
-        <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-jidoro-surface p-1">
+      <div className="border-b border-jidoro-line bg-white p-3 lg:p-4">
+        <div className="mb-3 grid grid-cols-2 gap-2 rounded-lg bg-jidoro-surface p-1 lg:mb-4">
           <button
             type="button"
             onClick={() => onSetActiveTab("results")}
@@ -106,7 +106,7 @@ export default function SearchPanel({
           )}
         </div>
 
-        <div className="mt-4">
+        <div className="mt-3 lg:mt-4">
           <CategoryFilter
             selectedCategory={selectedCategory}
             counts={categoryCounts}
@@ -114,7 +114,7 @@ export default function SearchPanel({
           />
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="mt-2 grid grid-cols-2 gap-2 lg:mt-3">
           <label className="relative">
             <ListFilter
               size={15}
@@ -156,7 +156,7 @@ export default function SearchPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 lg:p-4">
         {isLoading ? (
           <StateBox title="장소를 검색하고 있습니다." body="네이버 검색 결과를 불러오는 중입니다." />
         ) : errorMessage ? (

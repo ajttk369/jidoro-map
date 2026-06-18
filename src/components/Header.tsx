@@ -20,12 +20,37 @@ export default function Header({
 }: HeaderProps) {
   return (
     <header className="fixed inset-x-0 top-0 z-40 border-b border-jidoro-line bg-white">
-      <div className="mx-auto grid h-[72px] max-w-[1600px] grid-cols-[168px_minmax(0,1fr)_224px] items-center gap-3 px-4 max-lg:h-auto max-lg:grid-cols-1 max-lg:py-3">
-        <div className="flex items-center">
+      <div className="mx-auto grid h-[72px] max-w-[1600px] grid-cols-[168px_minmax(0,1fr)_224px] items-center gap-3 px-4 max-lg:h-[118px] max-lg:grid-cols-[minmax(0,1fr)_auto] max-lg:grid-rows-[42px_44px] max-lg:gap-2 max-lg:px-3 max-lg:py-3">
+        <div className="flex min-w-0 items-center">
           <LogoMark />
         </div>
 
-        <label className="relative flex min-w-0 items-center">
+        <div className="grid grid-cols-2 gap-2 max-lg:col-start-2 max-lg:row-start-1 max-lg:w-[148px] lg:col-start-3 lg:row-start-1">
+          <button
+            type="button"
+            onClick={onCurrentLocation}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-jidoro-line bg-white px-3 text-sm font-semibold text-jidoro-ink transition hover:border-jidoro-blue hover:text-jidoro-blue max-lg:px-2 max-lg:text-xs"
+            title="현재 위치"
+          >
+            <LocateFixed size={17} aria-hidden="true" />
+            <span className="max-[380px]:hidden">현 위치</span>
+          </button>
+          <button
+            type="button"
+            onClick={onToggleFavorites}
+            className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold transition max-lg:px-2 max-lg:text-xs ${
+              favoritesActive
+                ? "border-rose-200 bg-rose-50 text-rose-600"
+                : "border-jidoro-line bg-white text-jidoro-ink hover:border-rose-200 hover:text-rose-600"
+            }`}
+            title="즐겨찾기"
+          >
+            <Heart size={17} fill={favoritesActive ? "currentColor" : "none"} aria-hidden="true" />
+            <span className="max-[380px]:hidden">즐겨찾기</span>
+          </button>
+        </div>
+
+        <label className="relative flex min-w-0 items-center max-lg:col-span-2 max-lg:row-start-2 lg:col-start-2 lg:row-start-1">
           <Search
             className="pointer-events-none absolute left-4 text-jidoro-muted"
             size={19}
@@ -48,31 +73,6 @@ export default function Header({
             </button>
           ) : null}
         </label>
-
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={onCurrentLocation}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-jidoro-line bg-white px-3 text-sm font-semibold text-jidoro-ink transition hover:border-jidoro-blue hover:text-jidoro-blue"
-            title="현재 위치"
-          >
-            <LocateFixed size={17} aria-hidden="true" />
-            <span>현 위치</span>
-          </button>
-          <button
-            type="button"
-            onClick={onToggleFavorites}
-            className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold transition ${
-              favoritesActive
-                ? "border-rose-200 bg-rose-50 text-rose-600"
-                : "border-jidoro-line bg-white text-jidoro-ink hover:border-rose-200 hover:text-rose-600"
-            }`}
-            title="즐겨찾기"
-          >
-            <Heart size={17} fill={favoritesActive ? "currentColor" : "none"} aria-hidden="true" />
-            <span>즐겨찾기</span>
-          </button>
-        </div>
       </div>
     </header>
   );

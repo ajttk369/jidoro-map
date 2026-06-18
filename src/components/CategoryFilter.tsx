@@ -26,7 +26,7 @@ export default function CategoryFilter({
             key={category}
             type="button"
             onClick={() => onSelectCategory(category)}
-            className={`shrink-0 rounded-full border px-3 py-2 text-sm font-semibold transition ${
+            className={`shrink-0 rounded-full border px-3 py-1.5 text-sm font-semibold transition lg:py-2 ${
               isSelected
                 ? "border-jidoro-blue bg-jidoro-blue text-white shadow-sm"
                 : "border-jidoro-line bg-white text-jidoro-muted hover:border-jidoro-blue hover:text-jidoro-blue"

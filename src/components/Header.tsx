@@ -25,20 +25,20 @@ export default function Header({
           <LogoMark />
         </div>
 
-        <div className="grid grid-cols-2 gap-2 max-lg:col-start-2 max-lg:row-start-1 max-lg:w-[148px] lg:col-start-3 lg:row-start-1">
+        <div className="grid grid-cols-2 gap-2 max-lg:col-start-2 max-lg:row-start-1 max-lg:w-[92px] min-[430px]:max-lg:w-[148px] lg:col-start-3 lg:row-start-1">
           <button
             type="button"
             onClick={onCurrentLocation}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-jidoro-line bg-white px-3 text-sm font-semibold text-jidoro-ink transition hover:border-jidoro-blue hover:text-jidoro-blue max-lg:px-2 max-lg:text-xs"
+            className="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-jidoro-line bg-white px-3 text-sm font-semibold text-jidoro-ink transition hover:border-jidoro-blue hover:text-jidoro-blue max-lg:px-2 max-lg:text-xs"
             title="현재 위치"
           >
             <LocateFixed size={17} aria-hidden="true" />
-            <span className="max-[380px]:hidden">현 위치</span>
+            <span className="max-[429px]:hidden">현 위치</span>
           </button>
           <button
             type="button"
             onClick={onToggleFavorites}
-            className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold transition max-lg:px-2 max-lg:text-xs ${
+            className={`inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg border px-3 text-sm font-semibold transition max-lg:px-2 max-lg:text-xs ${
               favoritesActive
                 ? "border-rose-200 bg-rose-50 text-rose-600"
                 : "border-jidoro-line bg-white text-jidoro-ink hover:border-rose-200 hover:text-rose-600"
@@ -46,7 +46,7 @@ export default function Header({
             title="즐겨찾기"
           >
             <Heart size={17} fill={favoritesActive ? "currentColor" : "none"} aria-hidden="true" />
-            <span className="max-[380px]:hidden">즐겨찾기</span>
+            <span className="max-[429px]:hidden">즐겨찾기</span>
           </button>
         </div>
 

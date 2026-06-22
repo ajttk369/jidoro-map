@@ -64,11 +64,11 @@ export default function SearchPanel({
   return (
     <aside className="flex h-full flex-col overflow-hidden border-r border-jidoro-line bg-jidoro-surface lg:w-[400px] lg:shrink-0">
       <div className="border-b border-jidoro-line bg-white p-3 lg:p-4">
-        <div className="mb-3 grid grid-cols-2 gap-2 rounded-lg bg-jidoro-surface p-1 lg:mb-4">
+        <div className="mb-2 grid grid-cols-2 gap-2 rounded-lg bg-jidoro-surface p-1 lg:mb-4">
           <button
             type="button"
             onClick={() => onSetActiveTab("results")}
-            className={`h-9 rounded-md text-sm font-extrabold transition ${
+            className={`h-8 rounded-md text-sm font-extrabold transition lg:h-9 ${
               activeTab === "results" ? "bg-white text-jidoro-blue shadow-sm" : "text-jidoro-muted"
             }`}
           >
@@ -77,7 +77,7 @@ export default function SearchPanel({
           <button
             type="button"
             onClick={() => onSetActiveTab("favorites")}
-            className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-sm font-extrabold transition ${
+            className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md text-sm font-extrabold transition lg:h-9 ${
               activeTab === "favorites" ? "bg-white text-rose-600 shadow-sm" : "text-jidoro-muted"
             }`}
           >
@@ -91,7 +91,7 @@ export default function SearchPanel({
             <p className="text-sm font-semibold text-jidoro-muted">
               {activeTab === "favorites" ? "저장한 장소" : "검색 결과"}
             </p>
-            <h1 className="mt-1 text-2xl font-extrabold text-jidoro-ink">
+            <h1 className="text-2xl font-extrabold text-jidoro-ink lg:mt-1">
               {isLoading ? "검색 중" : `${places.length}개`}
             </h1>
           </div>
@@ -198,7 +198,7 @@ export default function SearchPanel({
 
 function StateBox({ title, body }: { title: string; body: string }) {
   return (
-    <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-jidoro-line bg-white p-6 text-center">
+    <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-jidoro-line bg-white p-5 text-center lg:min-h-64 lg:p-6">
       <p className="text-lg font-extrabold text-jidoro-ink">{title}</p>
       <p className="mt-2 text-sm leading-6 text-jidoro-muted">{body}</p>
     </div>

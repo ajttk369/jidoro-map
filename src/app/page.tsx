@@ -525,7 +525,7 @@ export default function Home() {
   })();
 
   return (
-    <main className="min-h-dvh bg-jidoro-surface">
+    <main className="h-dvh overflow-hidden bg-jidoro-surface">
       <Header
         query={query}
         favoritesActive={activeTab === "favorites"}
@@ -534,8 +534,20 @@ export default function Home() {
         onToggleFavorites={handleToggleFavoritesView}
       />
 
-      <div className="flex min-h-dvh flex-col pt-[118px] lg:h-dvh lg:min-h-0 lg:flex-row lg:pt-[72px]">
-        <div className="h-[calc(100dvh-118px)] min-h-[480px] lg:order-2 lg:h-auto lg:min-h-0 lg:flex-1">
+      <div className="flex h-dvh min-h-0 flex-col pt-[118px] lg:flex-row lg:pt-[72px]">
+        <div className="relative z-30 order-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-2xl border-t border-jidoro-line bg-white shadow-panel lg:static lg:order-1 lg:h-full lg:min-h-0 lg:flex-none lg:flex-row lg:overflow-visible lg:rounded-none lg:border-t-0 lg:bg-transparent lg:shadow-none">
+          <div className="flex h-3 shrink-0 items-center justify-center bg-white lg:hidden">
+            <span className="h-1 w-12 rounded-full bg-slate-300" />
+          </div>
+          <ModeRail
+            activeMode={panelMode === "directions" ? "directions" : "home"}
+            onOpenHome={handleOpenMapHome}
+            onOpenDirections={handleOpenDirectionsHome}
+          />
+          <div className="min-h-0 flex-1 overflow-hidden lg:overflow-visible">{panel}</div>
+        </div>
+
+        <div className="order-1 h-[34dvh] min-h-[260px] max-h-[340px] shrink-0 lg:order-2 lg:h-auto lg:min-h-0 lg:max-h-none lg:min-w-0 lg:flex-1">
           <NaverMap
             places={visiblePlaces}
             selectedPlace={selectedPlace}
@@ -549,18 +561,6 @@ export default function Home() {
             onMapCenterChange={setMapCenter}
             onToggleRoadview={setRoadviewOpen}
           />
-        </div>
-
-        <div className="fixed inset-x-0 bottom-0 z-30 flex h-[52dvh] min-h-[330px] flex-col overflow-hidden rounded-t-2xl border-t border-jidoro-line bg-white shadow-panel sm:h-[56dvh] lg:static lg:order-1 lg:h-full lg:min-h-0 lg:flex-row lg:overflow-visible lg:rounded-none lg:border-t-0 lg:bg-transparent lg:shadow-none">
-          <div className="flex h-4 shrink-0 items-center justify-center bg-white lg:hidden">
-            <span className="h-1 w-12 rounded-full bg-slate-300" />
-          </div>
-          <ModeRail
-            activeMode={panelMode === "directions" ? "directions" : "home"}
-            onOpenHome={handleOpenMapHome}
-            onOpenDirections={handleOpenDirectionsHome}
-          />
-          <div className="min-h-0 flex-1 overflow-hidden lg:overflow-visible">{panel}</div>
         </div>
       </div>
     </main>

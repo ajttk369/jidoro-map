@@ -138,6 +138,48 @@ export default function NaverMap({
   }, [onMapCenterChange, status]);
 
   useEffect(() => {
+    if (status !== "ready" || !mapElementRef.current || !mapRef.current || !window.naver?.maps) {
+      return;
+    }
+
+    const element = mapElementRef.current;
+    const map = mapRef.current;
+    const maps = window.naver.maps;
+
+    const resizeMap = () => {
+      const center = map.getCenter() as naver.maps.LatLng | undefined;
+      const width = element.clientWidth;
+      const height = element.clientHeight;
+
+      if (width > 0 && height > 0) {
+        map.setSize(new maps.Size(width, height));
+      }
+
+      maps.Event.trigger(map, "resize");
+      if (center) {
+        map.setCenter(center);
+      }
+    };
+
+    resizeMap();
+    const frame = window.requestAnimationFrame(resizeMap);
+    const timer = window.setTimeout(resizeMap, 250);
+    const observer = new ResizeObserver(() => {
+      window.requestAnimationFrame(resizeMap);
+    });
+
+    observer.observe(element);
+    window.addEventListener("resize", resizeMap);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+      observer.disconnect();
+      window.removeEventListener("resize", resizeMap);
+    };
+  }, [status]);
+
+  useEffect(() => {
     if (status !== "ready" || !mapRef.current || !window.naver?.maps) {
       return;
     }
@@ -299,7 +341,7 @@ export default function NaverMap({
 
   if (status === "ready") {
     return (
-      <section className="relative h-full min-h-[360px] overflow-hidden bg-slate-200">
+      <section className="relative h-full min-h-[240px] overflow-hidden bg-slate-200 lg:min-h-[360px]">
         <div ref={mapElementRef} className="h-full w-full" />
         <MapControls
           locationMessage={locationMessage}
@@ -335,7 +377,7 @@ export default function NaverMap({
   }
 
   return (
-    <section className="map-grid relative flex h-full min-h-[360px] items-center justify-center overflow-hidden">
+    <section className="map-grid relative flex h-full min-h-[240px] items-center justify-center overflow-hidden lg:min-h-[360px]">
       <div className="relative mx-4 max-w-md rounded-xl border border-jidoro-line bg-white p-5 text-center shadow-panel">
         <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-blue-50 text-jidoro-blue">
           <MapPin size={24} aria-hidden="true" />
@@ -374,17 +416,17 @@ function MapControls({
 }) {
   return (
     <>
-      <div className="absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-2">
+      <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-2 lg:top-4">
         <button
           type="button"
           onClick={onSearchHere}
-          className="inline-flex h-10 items-center gap-2 rounded-full border border-jidoro-line bg-white px-4 text-sm font-extrabold text-jidoro-blue shadow-panel transition hover:border-jidoro-blue"
+          className="inline-flex h-9 whitespace-nowrap items-center gap-1.5 rounded-full border border-jidoro-line bg-white px-3 text-xs font-extrabold text-jidoro-blue shadow-panel transition hover:border-jidoro-blue lg:h-10 lg:gap-2 lg:px-4 lg:text-sm"
         >
           <RefreshCcw size={16} aria-hidden="true" />
           이 지역에서 다시 검색
         </button>
       </div>
-      <div className="absolute bottom-4 right-4 flex max-w-[calc(100%-2rem)] flex-col items-end gap-2">
+      <div className="absolute bottom-3 right-3 flex max-w-[calc(100%-1.5rem)] flex-col items-end gap-2 lg:bottom-4 lg:right-4">
         {routeInfo ? (
           <p className="rounded-lg border border-blue-100 bg-white px-3 py-2 text-xs font-bold text-jidoro-blue shadow-sm">
             경로 {routeInfo.distance} · 예상 {routeInfo.duration}
@@ -399,7 +441,7 @@ function MapControls({
           <button
             type="button"
             onClick={onToggleRoadview}
-            className={`flex size-10 items-center justify-center ${
+            className={`flex size-9 items-center justify-center lg:size-10 ${
               roadviewOpen ? "bg-blue-50 text-jidoro-blue" : "text-jidoro-ink hover:bg-jidoro-surface"
             }`}
             title="거리뷰"
@@ -410,7 +452,7 @@ function MapControls({
           <button
             type="button"
             onClick={onZoomIn}
-            className="flex size-10 items-center justify-center text-jidoro-ink hover:bg-jidoro-surface"
+            className="flex size-9 items-center justify-center text-jidoro-ink hover:bg-jidoro-surface lg:size-10"
             title="확대"
           >
             <Plus size={18} aria-hidden="true" />
@@ -419,7 +461,7 @@ function MapControls({
           <button
             type="button"
             onClick={onZoomOut}
-            className="flex size-10 items-center justify-center text-jidoro-ink hover:bg-jidoro-surface"
+            className="flex size-9 items-center justify-center text-jidoro-ink hover:bg-jidoro-surface lg:size-10"
             title="축소"
           >
             <Minus size={18} aria-hidden="true" />
@@ -428,7 +470,7 @@ function MapControls({
         <button
           type="button"
           onClick={onCurrentLocation}
-          className="inline-flex size-11 items-center justify-center rounded-lg border border-jidoro-line bg-white text-jidoro-blue shadow-panel transition hover:border-jidoro-blue"
+          className="inline-flex size-10 items-center justify-center rounded-lg border border-jidoro-line bg-white text-jidoro-blue shadow-panel transition hover:border-jidoro-blue lg:size-11"
           title="현재 위치로 이동"
         >
           <LocateFixed size={20} aria-hidden="true" />

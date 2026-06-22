@@ -426,6 +426,26 @@ function MapControls({
           이 지역에서 다시 검색
         </button>
       </div>
+      <div className="absolute right-3 top-24 flex flex-col gap-3 lg:hidden">
+        <button
+          type="button"
+          onClick={onToggleRoadview}
+          className={`flex size-12 items-center justify-center rounded-full border border-jidoro-line bg-white shadow-panel transition ${
+            roadviewOpen ? "text-jidoro-blue ring-4 ring-blue-100" : "text-jidoro-ink"
+          }`}
+          title="거리뷰"
+        >
+          <ScanSearch size={21} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={onCurrentLocation}
+          className="flex size-12 items-center justify-center rounded-full border border-jidoro-line bg-white text-jidoro-blue shadow-panel transition"
+          title="현재 위치"
+        >
+          <LocateFixed size={21} aria-hidden="true" />
+        </button>
+      </div>
       <div className="absolute bottom-3 right-3 flex max-w-[calc(100%-1.5rem)] flex-col items-end gap-2 lg:bottom-4 lg:right-4">
         {routeInfo ? (
           <p className="rounded-lg border border-blue-100 bg-white px-3 py-2 text-xs font-bold text-jidoro-blue shadow-sm">
@@ -441,14 +461,14 @@ function MapControls({
           <button
             type="button"
             onClick={onToggleRoadview}
-            className={`flex size-9 items-center justify-center lg:size-10 ${
+            className={`hidden size-9 items-center justify-center lg:flex lg:size-10 ${
               roadviewOpen ? "bg-blue-50 text-jidoro-blue" : "text-jidoro-ink hover:bg-jidoro-surface"
             }`}
             title="거리뷰"
           >
             <ScanSearch size={18} aria-hidden="true" />
           </button>
-          <div className="h-px bg-jidoro-line" />
+          <div className="hidden h-px bg-jidoro-line lg:block" />
           <button
             type="button"
             onClick={onZoomIn}
@@ -470,7 +490,7 @@ function MapControls({
         <button
           type="button"
           onClick={onCurrentLocation}
-          className="inline-flex size-10 items-center justify-center rounded-lg border border-jidoro-line bg-white text-jidoro-blue shadow-panel transition hover:border-jidoro-blue lg:size-11"
+          className="hidden size-10 items-center justify-center rounded-lg border border-jidoro-line bg-white text-jidoro-blue shadow-panel transition hover:border-jidoro-blue lg:inline-flex lg:size-11"
           title="현재 위치로 이동"
         >
           <LocateFixed size={20} aria-hidden="true" />

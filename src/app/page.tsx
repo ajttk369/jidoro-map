@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { PointerEvent, ReactNode } from "react";
 import DirectionsPanel from "@/components/DirectionsPanel";
 import Header from "@/components/Header";
 import NaverMap from "@/components/NaverMap";
@@ -32,6 +32,15 @@ interface PlacesResponse {
 }
 
 type RoutePoint = { lat: number; lng: number };
+type MobileSheetPosition = "peek" | "half" | "full";
+
+const mobileSheetHeights: Record<MobileSheetPosition, string> = {
+  peek: "h-[176px]",
+  half: "h-[52dvh]",
+  full: "h-[calc(100dvh-88px)]"
+};
+
+const mobileSheetOrder: MobileSheetPosition[] = ["peek", "half", "full"];
 
 export default function Home() {
   const [query, setQuery] = useState("");
@@ -60,7 +69,10 @@ export default function Home() {
   const [routeGoal, setRouteGoal] = useState<RoutePoint | null>(null);
   const [roadviewOpen, setRoadviewOpen] = useState(false);
   const [searchNonce, setSearchNonce] = useState(0);
+  const [mobileSheetPosition, setMobileSheetPosition] = useState<MobileSheetPosition>("half");
   const panelModeRef = useRef<PanelMode>("results");
+  const sheetDragStartYRef = useRef<number | null>(null);
+  const sheetDragStartPositionRef = useRef<MobileSheetPosition>("half");
 
   useEffect(() => {
     panelModeRef.current = panelMode;
@@ -448,6 +460,67 @@ export default function Home() {
     setRouteInfo(null);
     setRouteMessage("");
     setRoadviewOpen(false);
+    setMobileSheetPosition("full");
+  }, []);
+
+  const moveMobileSheet = useCallback((direction: "up" | "down") => {
+    setMobileSheetPosition((current) => {
+      const currentIndex = mobileSheetOrder.indexOf(current);
+      const nextIndex =
+        direction === "up"
+          ? Math.min(mobileSheetOrder.length - 1, currentIndex + 1)
+          : Math.max(0, currentIndex - 1);
+
+      return mobileSheetOrder[nextIndex];
+    });
+  }, []);
+
+  const toggleMobileSheet = useCallback(() => {
+    setMobileSheetPosition((current) => {
+      if (current === "peek") {
+        return "half";
+      }
+
+      if (current === "half") {
+        return "full";
+      }
+
+      return "half";
+    });
+  }, []);
+
+  const handleSheetPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      sheetDragStartYRef.current = event.clientY;
+      sheetDragStartPositionRef.current = mobileSheetPosition;
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [mobileSheetPosition]
+  );
+
+  const handleSheetPointerUp = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const startY = sheetDragStartYRef.current;
+      sheetDragStartYRef.current = null;
+
+      if (startY === null) {
+        return;
+      }
+
+      const deltaY = event.clientY - startY;
+
+      if (Math.abs(deltaY) < 18) {
+        toggleMobileSheet();
+        return;
+      }
+
+      moveMobileSheet(deltaY > 0 ? "down" : "up");
+    },
+    [moveMobileSheet, toggleMobileSheet]
+  );
+
+  const handleSheetPointerCancel = useCallback(() => {
+    sheetDragStartYRef.current = null;
   }, []);
 
   const panel = (() => {
@@ -534,9 +607,16 @@ export default function Home() {
         onToggleFavorites={handleToggleFavoritesView}
       />
 
-      <div className="flex h-dvh min-h-0 flex-col pt-[118px] lg:flex-row lg:pt-[72px]">
-        <div className="relative z-30 order-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-2xl border-t border-jidoro-line bg-white shadow-panel lg:static lg:order-1 lg:h-full lg:min-h-0 lg:flex-none lg:flex-row lg:overflow-visible lg:rounded-none lg:border-t-0 lg:bg-transparent lg:shadow-none">
-          <div className="flex h-3 shrink-0 items-center justify-center bg-white lg:hidden">
+      <div className="relative h-dvh min-h-0 lg:flex lg:flex-row lg:pt-[72px]">
+        <div
+          className={`fixed inset-x-0 bottom-0 z-40 flex ${mobileSheetHeights[mobileSheetPosition]} min-h-[176px] flex-col overflow-hidden rounded-t-[28px] border-t border-jidoro-line bg-white shadow-panel transition-[height] duration-200 ease-out lg:static lg:order-1 lg:h-full lg:min-h-0 lg:flex-none lg:flex-row lg:overflow-visible lg:rounded-none lg:border-t-0 lg:bg-transparent lg:shadow-none lg:transition-none`}
+        >
+          <div
+            className="flex h-7 shrink-0 touch-none cursor-grab items-center justify-center bg-white active:cursor-grabbing lg:hidden"
+            onPointerDown={handleSheetPointerDown}
+            onPointerUp={handleSheetPointerUp}
+            onPointerCancel={handleSheetPointerCancel}
+          >
             <span className="h-1 w-12 rounded-full bg-slate-300" />
           </div>
           <ModeRail
@@ -547,7 +627,7 @@ export default function Home() {
           <div className="min-h-0 flex-1 overflow-hidden lg:overflow-visible">{panel}</div>
         </div>
 
-        <div className="order-1 h-[34dvh] min-h-[260px] max-h-[340px] shrink-0 lg:order-2 lg:h-auto lg:min-h-0 lg:max-h-none lg:min-w-0 lg:flex-1">
+        <div className="absolute inset-0 z-0 lg:static lg:order-2 lg:min-w-0 lg:flex-1">
           <NaverMap
             places={visiblePlaces}
             selectedPlace={selectedPlace}
@@ -577,7 +657,7 @@ function ModeRail({
   onOpenDirections: () => void;
 }) {
   return (
-    <nav className="flex shrink-0 border-b border-jidoro-line bg-white px-2 py-1.5 lg:w-[72px] lg:flex-col lg:items-center lg:border-b-0 lg:border-r lg:px-0 lg:py-4">
+    <nav className="flex shrink-0 border-b border-jidoro-line bg-white px-2 py-1.5 lg:w-[76px] lg:flex-col lg:items-center lg:border-b-0 lg:border-r lg:border-slate-200/70 lg:bg-white/95 lg:px-2 lg:py-5">
       <ModeButton
         active={activeMode === "home"}
         icon={<HomeIcon size={19} />}
@@ -609,8 +689,8 @@ function ModeButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex h-10 min-w-[88px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-2 text-[11px] font-extrabold transition lg:mb-2 lg:h-12 lg:min-w-0 lg:flex-none lg:self-stretch ${
-        active ? "bg-jidoro-blue text-white" : "text-jidoro-muted hover:bg-jidoro-surface hover:text-jidoro-ink"
+      className={`flex h-10 min-w-[88px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-2 text-[11px] font-extrabold transition lg:mb-2 lg:h-14 lg:min-w-0 lg:flex-none lg:self-stretch lg:rounded-2xl ${
+        active ? "bg-jidoro-blue text-white shadow-sm" : "text-jidoro-muted hover:bg-slate-100 hover:text-jidoro-ink"
       }`}
     >
       {icon}

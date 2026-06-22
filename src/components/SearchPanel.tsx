@@ -61,15 +61,17 @@ export default function SearchPanel({
   onSetSortMode,
   onSetResultFilter
 }: SearchPanelProps) {
+  const resultLabel = activeTab === "favorites" ? "저장한 장소" : "검색 결과";
+
   return (
-    <aside className="flex h-full flex-col overflow-hidden border-r border-jidoro-line bg-jidoro-surface lg:w-[400px] lg:shrink-0">
-      <div className="border-b border-jidoro-line bg-white p-3 lg:p-4">
-        <div className="mb-2 grid grid-cols-2 gap-2 rounded-lg bg-jidoro-surface p-1 lg:mb-4">
+    <aside className="flex h-full flex-col overflow-hidden border-r border-jidoro-line bg-jidoro-surface lg:w-[420px] lg:shrink-0 lg:border-r-0 lg:bg-slate-50/95 lg:shadow-[10px_0_30px_rgba(15,23,42,0.06)]">
+      <div className="border-b border-jidoro-line bg-white p-3 lg:border-b-0 lg:bg-transparent lg:p-5 lg:pb-3">
+        <div className="mb-2 grid grid-cols-2 gap-2 rounded-xl bg-jidoro-surface p-1 lg:mb-5 lg:rounded-2xl lg:bg-slate-100">
           <button
             type="button"
             onClick={() => onSetActiveTab("results")}
-            className={`h-8 rounded-md text-sm font-extrabold transition lg:h-9 ${
-              activeTab === "results" ? "bg-white text-jidoro-blue shadow-sm" : "text-jidoro-muted"
+            className={`h-8 rounded-lg text-sm font-extrabold transition lg:h-10 lg:rounded-xl ${
+              activeTab === "results" ? "bg-white text-jidoro-blue shadow-sm" : "text-jidoro-muted hover:text-jidoro-ink"
             }`}
           >
             검색 결과
@@ -77,8 +79,8 @@ export default function SearchPanel({
           <button
             type="button"
             onClick={() => onSetActiveTab("favorites")}
-            className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md text-sm font-extrabold transition lg:h-9 ${
-              activeTab === "favorites" ? "bg-white text-rose-600 shadow-sm" : "text-jidoro-muted"
+            className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg text-sm font-extrabold transition lg:h-10 lg:rounded-xl ${
+              activeTab === "favorites" ? "bg-white text-rose-600 shadow-sm" : "text-jidoro-muted hover:text-jidoro-ink"
             }`}
           >
             <Star size={15} fill={activeTab === "favorites" ? "currentColor" : "none"} />
@@ -86,11 +88,9 @@ export default function SearchPanel({
           </button>
         </div>
 
-        <div className="flex items-end justify-between gap-3">
+        <div className="flex items-end justify-between gap-3 lg:rounded-2xl lg:bg-white lg:p-4 lg:shadow-sm lg:ring-1 lg:ring-slate-200/70">
           <div>
-            <p className="text-sm font-semibold text-jidoro-muted">
-              {activeTab === "favorites" ? "저장한 장소" : "검색 결과"}
-            </p>
+            <p className="text-sm font-semibold text-jidoro-muted">{resultLabel}</p>
             <h1 className="text-2xl font-extrabold text-jidoro-ink lg:mt-1">
               {isLoading ? "검색 중" : `${places.length}개`}
             </h1>
@@ -123,7 +123,7 @@ export default function SearchPanel({
             <select
               value={resultFilter}
               onChange={(event) => onSetResultFilter(event.target.value as ResultFilter)}
-              className="h-10 w-full appearance-none rounded-lg border border-jidoro-line bg-white pl-9 pr-8 text-sm font-bold text-jidoro-ink outline-none"
+              className="h-10 w-full appearance-none rounded-xl border border-jidoro-line bg-white pl-9 pr-8 text-sm font-bold text-jidoro-ink outline-none transition focus:border-jidoro-blue focus:ring-4 focus:ring-blue-100"
             >
               {resultFilters.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -140,7 +140,7 @@ export default function SearchPanel({
             <select
               value={sortMode}
               onChange={(event) => onSetSortMode(event.target.value as SortMode)}
-              className="h-10 w-full appearance-none rounded-lg border border-jidoro-line bg-white px-3 pr-8 text-sm font-bold text-jidoro-ink outline-none"
+              className="h-10 w-full appearance-none rounded-xl border border-jidoro-line bg-white px-3 pr-8 text-sm font-bold text-jidoro-ink outline-none transition focus:border-jidoro-blue focus:ring-4 focus:ring-blue-100"
             >
               {sortOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -156,13 +156,13 @@ export default function SearchPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 lg:p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 lg:px-5 lg:pb-5 lg:pt-2">
         {isLoading ? (
-          <StateBox title="장소를 검색하고 있습니다." body="네이버 검색 결과를 불러오는 중입니다." />
+          <StateBox title="장소를 찾고 있어요." body="검색 결과를 불러오는 중입니다." />
         ) : errorMessage ? (
-          <StateBox title="검색을 불러오지 못했습니다." body={errorMessage} />
+          <StateBox title="검색 결과를 불러오지 못했습니다." body={errorMessage} />
         ) : places.length > 0 ? (
-          <div className="space-y-2.5">
+          <div className="space-y-2.5 lg:space-y-3">
             {places.map((place, index) => (
               <PlaceCard
                 key={place.id}
@@ -178,11 +178,11 @@ export default function SearchPanel({
           </div>
         ) : hasSearched || activeTab === "favorites" ? (
           <StateBox
-            title={activeTab === "favorites" ? "즐겨찾기가 없습니다." : "검색 결과가 없습니다."}
+            title={activeTab === "favorites" ? "저장한 장소가 없습니다." : "검색 결과가 없습니다."}
             body={
               activeTab === "favorites"
                 ? "장소 상세에서 저장을 누르면 이곳에서 다시 볼 수 있습니다."
-                : "다른 장소명이나 주소로 검색해보세요."
+                : "다른 장소명이나 주소로 다시 검색해보세요."
             }
           />
         ) : (
@@ -198,7 +198,7 @@ export default function SearchPanel({
 
 function StateBox({ title, body }: { title: string; body: string }) {
   return (
-    <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-jidoro-line bg-white p-5 text-center lg:min-h-64 lg:p-6">
+    <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-jidoro-line bg-white p-5 text-center lg:min-h-64 lg:p-6 lg:shadow-sm">
       <p className="text-lg font-extrabold text-jidoro-ink">{title}</p>
       <p className="mt-2 text-sm leading-6 text-jidoro-muted">{body}</p>
     </div>

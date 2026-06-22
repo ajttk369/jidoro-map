@@ -24,17 +24,17 @@ export default function PlaceCard({
 }: PlaceCardProps) {
   return (
     <article
-      className={`rounded-lg border bg-white p-3 transition ${
+      className={`rounded-2xl border bg-white p-3 transition lg:p-4 ${
         selected
-          ? "border-jidoro-blue shadow-panel ring-4 ring-blue-100"
-          : "border-jidoro-line hover:border-blue-200 hover:shadow-sm"
+          ? "border-blue-200 shadow-panel ring-4 ring-blue-100"
+          : "border-transparent shadow-sm ring-1 ring-slate-200/70 hover:-translate-y-0.5 hover:shadow-panel"
       }`}
     >
       <div className="flex gap-3">
         <button
           type="button"
           onClick={() => onSelect(place)}
-          className={`mt-1 flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold text-white ${
+          className={`mt-1 flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold text-white shadow-sm ${
             selected ? "bg-jidoro-blue" : "bg-jidoro-green"
           }`}
           aria-label={`${place.name} 선택`}
@@ -59,7 +59,7 @@ export default function PlaceCard({
                 <span className="text-xs font-semibold text-jidoro-green">{place.status}</span>
               </div>
             </div>
-            <span className="shrink-0 rounded-md bg-jidoro-surface px-2 py-1 text-xs font-bold text-jidoro-muted">
+            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-jidoro-muted">
               {place.distance}
             </span>
           </div>
@@ -74,7 +74,7 @@ export default function PlaceCard({
         <button
           type="button"
           onClick={() => onSelect(place)}
-          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-jidoro-blue px-2 text-xs font-bold text-white"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-xl bg-jidoro-blue px-2 text-xs font-bold text-white transition hover:bg-blue-700"
         >
           <Map size={14} aria-hidden="true" />
           상세
@@ -82,7 +82,7 @@ export default function PlaceCard({
         <button
           type="button"
           onClick={() => onSetDestination(place)}
-          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-jidoro-line bg-white px-2 text-xs font-bold text-jidoro-ink hover:border-jidoro-blue hover:text-jidoro-blue"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border border-jidoro-line bg-white px-2 text-xs font-bold text-jidoro-ink transition hover:border-jidoro-blue hover:bg-blue-50 hover:text-jidoro-blue"
         >
           <Navigation size={14} aria-hidden="true" />
           도착
@@ -90,10 +90,10 @@ export default function PlaceCard({
         <button
           type="button"
           onClick={() => onToggleFavorite(place)}
-          className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md border px-2 text-xs font-bold ${
+          className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border px-2 text-xs font-bold transition ${
             favorite
               ? "border-rose-200 bg-rose-50 text-rose-600"
-              : "border-jidoro-line bg-white text-jidoro-ink hover:border-rose-200 hover:text-rose-600"
+              : "border-jidoro-line bg-white text-jidoro-ink hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
           }`}
         >
           <Heart size={14} fill={favorite ? "currentColor" : "none"} aria-hidden="true" />

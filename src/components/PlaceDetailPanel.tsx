@@ -45,13 +45,13 @@ export default function PlaceDetailPanel({
   const shareText = `${place.name} ${address}`;
 
   return (
-    <aside className="flex h-full flex-col overflow-hidden border-r border-jidoro-line bg-white lg:w-[420px] lg:shrink-0">
-      <div className="border-b border-jidoro-line bg-white px-5 py-4">
+    <aside className="flex h-full flex-col overflow-hidden border-r border-slate-200 bg-slate-50/95 shadow-[8px_0_30px_rgba(15,23,42,0.06)] lg:w-[430px] lg:shrink-0">
+      <div className="border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
         <div className="flex items-center justify-between gap-2">
           <button
             type="button"
             onClick={onBack}
-            className="flex size-9 items-center justify-center rounded-lg text-jidoro-ink hover:bg-jidoro-surface"
+            className="flex size-9 items-center justify-center rounded-xl text-jidoro-ink transition hover:bg-slate-100"
             title="검색 결과로"
           >
             <ArrowLeft size={21} />
@@ -61,7 +61,7 @@ export default function PlaceDetailPanel({
               type="button"
               onClick={() => onToggleFavorite(place)}
               className={`flex size-9 items-center justify-center rounded-lg ${
-                favorite ? "bg-rose-50 text-rose-600" : "text-jidoro-ink hover:bg-jidoro-surface"
+                favorite ? "bg-rose-50 text-rose-600" : "text-jidoro-ink hover:bg-slate-100"
               }`}
               title="즐겨찾기"
             >
@@ -70,7 +70,7 @@ export default function PlaceDetailPanel({
             <button
               type="button"
               onClick={onClose}
-              className="flex size-9 items-center justify-center rounded-lg text-jidoro-ink hover:bg-jidoro-surface"
+              className="flex size-9 items-center justify-center rounded-xl text-jidoro-ink transition hover:bg-slate-100"
               title="닫기"
             >
               ×
@@ -94,21 +94,21 @@ export default function PlaceDetailPanel({
           <button
             type="button"
             onClick={() => onSetStart(place)}
-            className="inline-flex h-10 items-center justify-center rounded-full bg-blue-50 text-sm font-extrabold text-jidoro-blue hover:bg-blue-100"
+            className="inline-flex h-10 items-center justify-center rounded-full bg-blue-50 text-sm font-extrabold text-jidoro-blue transition hover:bg-blue-100"
           >
             출발
           </button>
           <button
             type="button"
             onClick={() => onSetDestination(place)}
-            className="inline-flex h-10 items-center justify-center rounded-full bg-jidoro-blue text-sm font-extrabold text-white"
+            className="inline-flex h-10 items-center justify-center rounded-full bg-jidoro-blue text-sm font-extrabold text-white shadow-md shadow-blue-500/20 transition hover:bg-blue-700"
           >
             도착
           </button>
           <button
             type="button"
             onClick={() => onOpenRoadview(place)}
-            className="inline-flex h-10 items-center justify-center gap-1 rounded-full border border-jidoro-line bg-white text-sm font-bold text-jidoro-ink hover:border-jidoro-blue hover:text-jidoro-blue"
+            className="inline-flex h-10 items-center justify-center gap-1 rounded-full border border-slate-200 bg-white text-sm font-bold text-jidoro-ink shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-jidoro-blue"
           >
             <ScanSearch size={15} />
             거리뷰
@@ -116,7 +116,7 @@ export default function PlaceDetailPanel({
           <button
             type="button"
             onClick={() => onCopyText(shareText, "공유 문구 복사됨")}
-            className="inline-flex h-10 items-center justify-center gap-1 rounded-full border border-jidoro-line bg-white text-sm font-bold text-jidoro-ink hover:border-jidoro-blue hover:text-jidoro-blue"
+            className="inline-flex h-10 items-center justify-center gap-1 rounded-full border border-slate-200 bg-white text-sm font-bold text-jidoro-ink shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-jidoro-blue"
           >
             <Share2 size={15} />
             공유
@@ -124,14 +124,14 @@ export default function PlaceDetailPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto bg-jidoro-surface">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50">
         {copiedText ? (
           <p className="mx-5 mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-jidoro-green">
             {copiedText}
           </p>
         ) : null}
 
-        <section className="border-b border-jidoro-line bg-white px-5 py-4">
+        <section className="mx-4 mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-start gap-3">
             <MapPin size={18} className="mt-0.5 shrink-0 text-jidoro-muted" />
             <div className="min-w-0 flex-1">
@@ -150,7 +150,7 @@ export default function PlaceDetailPanel({
           </div>
         </section>
 
-        <section className="mt-3 border-y border-jidoro-line bg-white px-5 py-4">
+        <section className="mx-4 mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-base font-extrabold text-jidoro-ink">장소 정보</h2>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <InfoTile label="구분" value={place.category} />
@@ -163,7 +163,7 @@ export default function PlaceDetailPanel({
           </p>
         </section>
 
-        <section className="mt-3 border-y border-jidoro-line bg-white px-5 py-4">
+        <section className="mx-4 mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="space-y-3 text-sm text-jidoro-muted">
             <div className="flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
@@ -187,7 +187,7 @@ export default function PlaceDetailPanel({
           </div>
         </section>
 
-        <section className="mt-3 border-y border-jidoro-line bg-white px-5 py-4">
+        <section className="mx-4 mb-5 mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"

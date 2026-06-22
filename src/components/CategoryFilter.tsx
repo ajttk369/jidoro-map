@@ -15,7 +15,7 @@ export default function CategoryFilter({
   onSelectCategory
 }: CategoryFilterProps) {
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1">
+    <div className="flex gap-2 overflow-x-auto pb-1.5">
       {categories.map((category) => {
         const isSelected = selectedCategory === category;
         const count =
@@ -26,10 +26,10 @@ export default function CategoryFilter({
             key={category}
             type="button"
             onClick={() => onSelectCategory(category)}
-            className={`shrink-0 rounded-full border px-3 py-1.5 text-sm font-semibold transition lg:py-2 ${
+            className={`shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-semibold transition lg:px-4 lg:py-2 ${
               isSelected
-                ? "border-jidoro-blue bg-jidoro-blue text-white shadow-sm"
-                : "border-jidoro-line bg-white text-jidoro-muted hover:border-jidoro-blue hover:text-jidoro-blue"
+                ? "border-jidoro-blue bg-jidoro-blue text-white shadow-md shadow-blue-500/20"
+                : "border-slate-200 bg-white text-jidoro-muted shadow-sm hover:border-blue-200 hover:bg-blue-50 hover:text-jidoro-blue"
             }`}
           >
             <span>{category}</span>

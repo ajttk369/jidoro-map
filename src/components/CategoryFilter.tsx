@@ -26,6 +26,7 @@ export default function CategoryFilter({
             key={category}
             type="button"
             onClick={() => onSelectCategory(category)}
+            aria-pressed={isSelected}
             className={`shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-semibold transition lg:px-4 lg:py-2 ${
               isSelected
                 ? "border-jidoro-blue bg-jidoro-blue text-white shadow-md shadow-blue-500/20"

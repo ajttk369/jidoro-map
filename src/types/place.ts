@@ -64,7 +64,7 @@ export interface TransitPlan {
   title: string;
   primaryType: "bus" | "subway" | "mixed";
   duration: string;
-  durationMinutes: number;
+  durationMinutes: number | null;
   distance: string;
   fare: string;
   departureTime: string;
@@ -83,6 +83,8 @@ export interface RouteSegment {
 }
 
 export interface RouteInfo {
+  source?: "road" | "reference" | "transit-candidates";
+  checkedAt?: string;
   mode: RouteMode;
   distance: string;
   duration: string;

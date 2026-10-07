@@ -1,225 +1,111 @@
 import { NextResponse } from "next/server";
 import { geocodeAddressToPlace, type NaverGeocodeResponse } from "@/lib/naverGeocode";
 import { toPlace, type NaverLocalResponse } from "@/lib/naverLocal";
-import { inferSearchMode, type SearchMode } from "@/lib/placeUtils";
+import { inferSearchMode, normalizeSavedPlace, placeIdentity } from "@/lib/placeUtils";
+import { ApiError, fetchApiJson, publicError, readCoordinate, requestScope, validateRequest } from "@/lib/serverRequest";
 import type { Place } from "@/types/place";
 
 export const dynamic = "force-dynamic";
 
-interface NaverErrorResponse {
-  errorMessage?: string;
-  errorCode?: string;
-  message?: string;
+function cloudHeaders() {
+  const id = process.env.NAVER_CLOUD_MAP_CLIENT_ID || process.env.NAVER_MAPS_CLIENT_ID || process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
+  const secret = process.env.NAVER_CLOUD_MAP_CLIENT_SECRET || process.env.NAVER_MAPS_CLIENT_SECRET;
+  if (!id || !secret) throw new ApiError(503, "주소·지도 중심 검색 API 설정이 필요합니다.");
+  return { "x-ncp-apigw-api-key-id": id, "x-ncp-apigw-api-key": secret };
 }
 
-interface ReverseGeocodeResponse {
-  results?: Array<{
-    region?: {
-      area1?: { name?: string };
-      area2?: { name?: string };
-      area3?: { name?: string };
-    };
-  }>;
+async function geocode(query: string, signal: AbortSignal) {
+  const url = new URL("https://maps.apigw.ntruss.com/map-geocode/v2/geocode");
+  url.searchParams.set("query", query);
+  const data = await fetchApiJson<NaverGeocodeResponse>(url, { headers: cloudHeaders() }, signal);
+  if (data.status !== "OK" || !Array.isArray(data.addresses)) throw new ApiError(502, "주소 검색 응답을 처리하지 못했습니다.");
+  return data.addresses.slice(0, 5).filter(item => item && typeof item === "object")
+    .map((item, index) => geocodeAddressToPlace(item, index, query));
 }
 
-function parseError(errorData: NaverErrorResponse) {
-  return errorData.errorMessage || errorData.message || errorData.errorCode || "";
+async function centerLabel(params: URLSearchParams, signal: AbortSignal) {
+  if (!params.has("centerLat") && !params.has("centerLng")) return "";
+  const lat = readCoordinate(params, "centerLat", 90);
+  const lng = readCoordinate(params, "centerLng", 180);
+  const url = new URL("https://maps.apigw.ntruss.com/map-reversegeocode/v2/gc");
+  url.searchParams.set("coords", `${lng},${lat}`);
+  url.searchParams.set("orders", "addr,roadaddr");
+  url.searchParams.set("output", "json");
+  const data = await fetchApiJson<{ status?: { code?: number }; results?: Array<{ region?: Record<string, { name?: string }> }> }>(
+    url, { headers: cloudHeaders() }, signal);
+  const region = data.results?.[0]?.region;
+  const label = [region?.area1?.name, region?.area2?.name, region?.area3?.name].filter(Boolean).join(" ");
+  if (!label || (data.status?.code !== undefined && data.status.code !== 0)) {
+    throw new ApiError(502, "지도 중심의 지역 정보를 찾지 못했습니다. 중심을 바꾸거나 일반 검색을 이용해주세요.");
+  }
+  return label;
 }
 
-function getCloudKeys() {
-  return {
-    clientId:
-      process.env.NAVER_CLOUD_MAP_CLIENT_ID ||
-      process.env.NAVER_MAPS_CLIENT_ID ||
-      process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID,
-    clientSecret: process.env.NAVER_CLOUD_MAP_CLIENT_SECRET || process.env.NAVER_MAPS_CLIENT_SECRET
-  };
-}
-
-async function getCenterLabel(lat: string | null, lng: string | null) {
-  const { clientId, clientSecret } = getCloudKeys();
-
-  if (!clientId || !clientSecret || !lat || !lng) {
-    return "";
-  }
-
-  const apiUrl = new URL("https://maps.apigw.ntruss.com/map-reversegeocode/v2/gc");
-  apiUrl.searchParams.set("coords", `${lng},${lat}`);
-  apiUrl.searchParams.set("orders", "addr,roadaddr");
-  apiUrl.searchParams.set("output", "json");
-
-  try {
-    const response = await fetch(apiUrl, {
-      headers: {
-        "x-ncp-apigw-api-key-id": clientId,
-        "x-ncp-apigw-api-key": clientSecret
-      },
-      cache: "no-store"
-    });
-
-    if (!response.ok) {
-      return "";
-    }
-
-    const data = (await response.json()) as ReverseGeocodeResponse;
-    const region = data.results?.[0]?.region;
-
-    return [region?.area1?.name, region?.area2?.name, region?.area3?.name]
-      .filter(Boolean)
-      .join(" ");
-  } catch {
-    return "";
-  }
-}
-
-async function searchLocalPlaces(query: string, category: string, display: number, centerLabel: string) {
-  const clientId = process.env.NAVER_MAP_CLIENT_ID || process.env.NAVER_CLIENT_ID;
-  const clientSecret = process.env.NAVER_MAP_CLIENT_SECRET || process.env.NAVER_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    return { places: [] as Place[], error: "" };
-  }
-
-  const categoryKeyword = category && category !== "전체" && category !== "주소" ? category : "";
-  const searchQuery = [centerLabel, query, categoryKeyword].filter(Boolean).join(" ");
-  const apiUrl = new URL("https://openapi.naver.com/v1/search/local.json");
-  apiUrl.searchParams.set("query", searchQuery);
-  apiUrl.searchParams.set("display", String(display));
-  apiUrl.searchParams.set("start", "1");
-  apiUrl.searchParams.set("sort", "random");
-
-  const response = await fetch(apiUrl, {
-    headers: {
-      "X-Naver-Client-Id": clientId,
-      "X-Naver-Client-Secret": clientSecret
-    },
-    cache: "no-store"
-  });
-
-  if (!response.ok) {
-    let message = "";
-
-    try {
-      message = parseError((await response.json()) as NaverErrorResponse);
-    } catch {
-      message = await response.text().catch(() => "");
-    }
-
-    return {
-      places: [] as Place[],
-      error: `네이버 지역 검색을 불러오지 못했습니다. (${response.status})${message ? ` ${message}` : ""}`
-    };
-  }
-
-  const data = (await response.json()) as NaverLocalResponse;
-  return { places: data.items.map(toPlace), error: "" };
-}
-
-async function geocodeAddress(query: string) {
-  const { clientId, clientSecret } = getCloudKeys();
-
-  if (!clientId || !clientSecret) {
-    return { places: [] as Place[], error: "" };
-  }
-
-  const apiUrl = new URL("https://maps.apigw.ntruss.com/map-geocode/v2/geocode");
-  apiUrl.searchParams.set("query", query);
-
-  const response = await fetch(apiUrl, {
-    headers: {
-      "x-ncp-apigw-api-key-id": clientId,
-      "x-ncp-apigw-api-key": clientSecret
-    },
-    cache: "no-store"
-  });
-
-  if (!response.ok) {
-    let message = "";
-
-    try {
-      message = parseError((await response.json()) as NaverErrorResponse);
-    } catch {
-      message = await response.text().catch(() => "");
-    }
-
-    return {
-      places: [] as Place[],
-      error: `네이버 주소 검색을 불러오지 못했습니다. (${response.status})${message ? ` ${message}` : ""}`
-    };
-  }
-
-  const data = (await response.json()) as NaverGeocodeResponse;
-  return {
-    places: data.addresses.map((address, index) => geocodeAddressToPlace(address, index, query)),
-    error: data.errorMessage || ""
-  };
+async function localSearch(query: string, category: string, display: number, label: string, signal: AbortSignal) {
+  const id = process.env.NAVER_MAP_CLIENT_ID || process.env.NAVER_CLIENT_ID;
+  const secret = process.env.NAVER_MAP_CLIENT_SECRET || process.env.NAVER_CLIENT_SECRET;
+  if (!id || !secret) throw new ApiError(503, "장소 검색 API 설정이 필요합니다.");
+  const url = new URL("https://openapi.naver.com/v1/search/local.json");
+  const keyword = category !== "전체" && category !== "주소" ? category : "";
+  url.searchParams.set("query", [label, query, keyword].filter(Boolean).join(" "));
+  url.searchParams.set("display", String(display));
+  url.searchParams.set("start", "1");
+  url.searchParams.set("sort", "random");
+  const data = await fetchApiJson<NaverLocalResponse>(url, {
+    headers: { "X-Naver-Client-Id": id, "X-Naver-Client-Secret": secret }
+  }, signal);
+  if (!Array.isArray(data.items)) throw new ApiError(502, "장소 검색 응답을 처리하지 못했습니다.");
+  return data.items.slice(0, display).filter(item => item && typeof item.title === "string").map(toPlace);
 }
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const query = searchParams.get("query")?.trim() ?? "";
-  const category = searchParams.get("category")?.trim() ?? "";
-  const mode = (searchParams.get("mode") as SearchMode | null) ?? "auto";
-  const centerLat = searchParams.get("centerLat");
-  const centerLng = searchParams.get("centerLng");
-  const requestedDisplay = Number(searchParams.get("display") ?? 5);
-  const display = Math.min(Math.max(Number.isFinite(requestedDisplay) ? requestedDisplay : 5, 1), 5);
-
-  if (!query) {
-    return NextResponse.json({ places: [] });
-  }
-
+  const scope = requestScope(request);
   try {
-    const resolvedMode = mode === "auto" ? inferSearchMode(query) : mode;
-    const centerLabel = resolvedMode === "place" ? await getCenterLabel(centerLat, centerLng) : "";
-
-    if (resolvedMode === "address" || category === "주소") {
-      const addressResult = await geocodeAddress(query);
-
-      if (addressResult.places.length > 0) {
-        return NextResponse.json({
-          places: addressResult.places,
-          total: addressResult.places.length,
-          mode: "address"
-        });
+    validateRequest(request);
+    const params = new URL(request.url).searchParams;
+    const query = params.get("query")?.trim() || "";
+    const mode = params.get("mode") || "auto";
+    const category = params.get("category") || "전체";
+    const display = Number(params.get("display") ?? 5);
+    if (query.length > 200 || !["auto", "place", "address"].includes(mode) ||
+        !["전체", "카페", "음식점", "편의점", "병원", "지하철역", "주차장", "공원", "주소", "기타"].includes(category) ||
+        !Number.isInteger(display) || display < 1 || display > 5) {
+      throw new ApiError(400, "검색 조건을 확인해주세요. 검색어는 200자까지 입력할 수 있습니다.");
+    }
+    if (params.has("centerLat") || params.has("centerLng")) {
+      readCoordinate(params, "centerLat", 90);
+      readCoordinate(params, "centerLng", 180);
+    }
+    if (!query) return NextResponse.json({ places: [], total: 0 });
+    const resolvedMode = category === "주소" ? "address" : mode === "auto" ? inferSearchMode(query) : mode;
+    let places: Place[] = [];
+    let label = "";
+    let resultMode = resolvedMode;
+    if (resolvedMode === "address") {
+      places = await geocode(query, scope.signal);
+      if (!places.length && mode === "auto" && category !== "주소") {
+        label = await centerLabel(params, scope.signal);
+        places = await localSearch(query, category, display, label, scope.signal);
+        resultMode = "place";
+      }
+    } else {
+      label = await centerLabel(params, scope.signal);
+      places = await localSearch(query, category, display, label, scope.signal);
+      if (!places.length && mode === "auto" &&
+          (process.env.NAVER_CLOUD_MAP_CLIENT_SECRET || process.env.NAVER_MAPS_CLIENT_SECRET)) {
+        places = await geocode(query, scope.signal);
+        if (places.length) resultMode = "address";
       }
     }
-
-    const localResult = await searchLocalPlaces(query, category, display, centerLabel);
-
-    if (localResult.places.length > 0) {
-      return NextResponse.json({
-        places: localResult.places,
-        total: localResult.places.length,
-        mode: "place",
-        centerLabel
-      });
-    }
-
-    const fallbackAddressResult = await geocodeAddress(query);
-
-    if (fallbackAddressResult.places.length > 0) {
-      return NextResponse.json({
-        places: fallbackAddressResult.places,
-        total: fallbackAddressResult.places.length,
-        mode: "address"
-      });
-    }
-
-    const error = fallbackAddressResult.error || localResult.error;
-
-    if (error) {
-      return NextResponse.json({ message: error, places: [] }, { status: 502 });
-    }
-
-    return NextResponse.json({ places: [], total: 0, mode: resolvedMode });
-  } catch {
-    return NextResponse.json(
-      {
-        message: "검색 서버에 연결하지 못했습니다. 네트워크 또는 API 설정을 확인해주세요.",
-        places: []
-      },
-      { status: 502 }
-    );
+    const validPlaces = places.map(normalizeSavedPlace).filter((place): place is Place => !!place);
+    if (places.length && !validPlaces.length) throw new ApiError(502, "검색 결과에 유효한 장소 정보가 없습니다.");
+    const unique = Array.from(new Map(validPlaces.map(place => [placeIdentity(place), place])).values()).slice(0, display);
+    return NextResponse.json({ places: unique, total: unique.length, mode: resultMode, centerLabel: label });
+  } catch (error) {
+    const failure = publicError(error);
+    return NextResponse.json({ message: failure.message, places: [] }, { status: failure.status });
+  } finally {
+    scope.dispose();
   }
 }
+

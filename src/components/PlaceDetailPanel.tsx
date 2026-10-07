@@ -11,9 +11,10 @@ import {
   Phone,
   ScanSearch,
   Share2,
-  Star
+  Star,
+  X
 } from "lucide-react";
-import { getPrimaryAddress } from "@/lib/placeUtils";
+import { getPrimaryAddress, hasCoordinates, safeHttpUrl } from "@/lib/placeUtils";
 import type { Place } from "@/types/place";
 
 interface PlaceDetailPanelProps {
@@ -43,16 +44,18 @@ export default function PlaceDetailPanel({
 }: PlaceDetailPanelProps) {
   const address = getPrimaryAddress(place);
   const shareText = `${place.name} ${address}`;
+  const externalLink = safeHttpUrl(place.link);
 
   return (
-    <aside className="flex h-full flex-col overflow-hidden border-r border-slate-200 bg-slate-50/95 shadow-[8px_0_30px_rgba(15,23,42,0.06)] lg:w-[430px] lg:shrink-0">
-      <div className="border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
+    <aside className="flex h-full flex-col overflow-y-auto border-r border-slate-200 bg-slate-50/95 shadow-[8px_0_30px_rgba(15,23,42,0.06)] lg:w-[430px] lg:shrink-0 lg:overflow-hidden">
+      <div className="shrink-0 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur lg:px-5">
         <div className="flex items-center justify-between gap-2">
           <button
             type="button"
             onClick={onBack}
             className="flex size-9 items-center justify-center rounded-xl text-jidoro-ink transition hover:bg-slate-100"
             title="검색 결과로"
+            aria-label="검색 결과로 돌아가기"
           >
             <ArrowLeft size={21} />
           </button>
@@ -64,6 +67,8 @@ export default function PlaceDetailPanel({
                 favorite ? "bg-rose-50 text-rose-600" : "text-jidoro-ink hover:bg-slate-100"
               }`}
               title="즐겨찾기"
+              aria-label={favorite ? "즐겨찾기 해제" : "즐겨찾기 저장"}
+              aria-pressed={favorite}
             >
               <Heart size={19} fill={favorite ? "currentColor" : "none"} />
             </button>
@@ -72,8 +77,9 @@ export default function PlaceDetailPanel({
               onClick={onClose}
               className="flex size-9 items-center justify-center rounded-xl text-jidoro-ink transition hover:bg-slate-100"
               title="닫기"
+              aria-label="장소 상세 닫기"
             >
-              ×
+              <X size={20} />
             </button>
           </div>
         </div>
@@ -108,6 +114,8 @@ export default function PlaceDetailPanel({
           <button
             type="button"
             onClick={() => onOpenRoadview(place)}
+            disabled={!hasCoordinates(place)}
+            title={hasCoordinates(place) ? "거리뷰" : "좌표 정보가 없습니다"}
             className="inline-flex h-10 items-center justify-center gap-1 rounded-full border border-slate-200 bg-white text-sm font-bold text-jidoro-ink shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-jidoro-blue"
           >
             <ScanSearch size={15} />
@@ -197,11 +205,11 @@ export default function PlaceDetailPanel({
               <Navigation size={17} />
               길찾기
             </button>
-            {place.link ? (
+            {externalLink ? (
               <a
-                href={place.link}
+                href={externalLink}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-jidoro-line bg-white text-sm font-bold text-jidoro-ink hover:border-jidoro-blue hover:text-jidoro-blue"
               >
                 <ExternalLink size={17} />
@@ -228,7 +236,7 @@ function InfoTile({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg bg-jidoro-surface p-3">
       <p className="text-xs font-bold text-jidoro-muted">{label}</p>
-      <p className="mt-1 truncate text-sm font-extrabold text-jidoro-ink">{value}</p>
+      <p className="mt-1 break-words text-sm font-extrabold text-jidoro-ink">{value}</p>
     </div>
   );
 }

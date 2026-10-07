@@ -1,304 +1,108 @@
 import { NextResponse } from "next/server";
 import { getTransitArrivals } from "@/lib/tagoTransit";
+import { calculateDistanceMeters, formatDistance, isValidPoint } from "@/lib/placeUtils";
+import { ApiError, fetchApiJson, publicError, readCoordinate, requestScope, validateRequest } from "@/lib/serverRequest";
 import type { RouteInfo, RouteMode, RouteSegment, TrafficLevel } from "@/types/place";
 
 export const dynamic = "force-dynamic";
+interface DrivingRoute {
+  summary?: { distance?: number; duration?: number };
+  path?: Array<[number, number]>;
+  section?: Array<{ pointIndex: number; pointCount: number; congestion: number }>;
+  guide?: Array<{ instructions?: string }>;
+}
+interface DirectionsResponse { code?: number; route?: { trafast?: DrivingRoute[] } }
 
-interface DirectionResponse {
-  route?: {
-    trafast?: Array<{
-      summary?: {
-        distance?: number;
-        duration?: number;
-      };
-      path?: Array<[number, number]>;
-    }>;
-  };
+function duration(milliseconds: number) {
+  const minutes = Math.max(1, Math.ceil(milliseconds / 60000));
+  return minutes < 60 ? `${minutes}분` : `${Math.floor(minutes / 60)}시간 ${minutes % 60}분`;
 }
 
-function formatDistance(meters: number) {
-  if (meters < 1000) {
-    return `${Math.round(meters)}m`;
-  }
-
-  return `${(meters / 1000).toFixed(meters < 10000 ? 1 : 0)}km`;
-}
-
-function formatDurationFromMinutes(minutes: number) {
-  const rounded = Math.max(1, Math.round(minutes));
-
-  if (rounded < 60) {
-    return `${rounded}분`;
-  }
-
-  const hours = Math.floor(rounded / 60);
-  const remainMinutes = rounded % 60;
-  return remainMinutes ? `${hours}시간 ${remainMinutes}분` : `${hours}시간`;
-}
-
-function distanceMeters(startLat: number, startLng: number, goalLat: number, goalLng: number) {
-  const earthRadius = 6371000;
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  const dLat = toRad(goalLat - startLat);
-  const dLng = toRad(goalLng - startLng);
-  const lat1 = toRad(startLat);
-  const lat2 = toRad(goalLat);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-
-  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function splitPath(path: Array<{ lat: number; lng: number }>, parts: number) {
-  if (path.length < 2) {
-    return [path];
-  }
-
-  const chunks: Array<Array<{ lat: number; lng: number }>> = [];
-  const chunkSize = Math.max(2, Math.ceil(path.length / parts));
-
-  for (let index = 0; index < path.length - 1; index += chunkSize - 1) {
-    chunks.push(path.slice(index, Math.min(index + chunkSize, path.length)));
-  }
-
-  return chunks.filter((chunk) => chunk.length >= 2);
-}
-
-function buildCarSegments(path: Array<{ lat: number; lng: number }>): RouteSegment[] {
-  const chunks = splitPath(path, 4);
-  const traffic: Array<{ level: TrafficLevel; color: string; label: string }> = [
-    { level: "smooth", color: "#16A34A", label: "원활" },
-    { level: "slow", color: "#F59E0B", label: "서행" },
-    { level: "jam", color: "#EF4444", label: "정체" },
-    { level: "smooth", color: "#16A34A", label: "원활" }
-  ];
-
-  return chunks.map((chunk, index) => ({
-    kind: "traffic",
-    color: traffic[index % traffic.length].color,
-    traffic: traffic[index % traffic.length].level,
-    label: traffic[index % traffic.length].label,
-    path: chunk
-  }));
-}
-
-function buildTransitSegments(
-  path: Array<{ lat: number; lng: number }>,
-  hasSubway: boolean,
-  hasBus: boolean
-): RouteSegment[] {
-  const chunks = splitPath(path, hasSubway && hasBus ? 4 : 3);
-  const colors =
-    hasSubway && hasBus
-      ? [
-          { kind: "walk" as const, color: "#94A3B8", label: "도보" },
-          { kind: "bus" as const, color: "#65A30D", label: "버스" },
-          { kind: "subway" as const, color: "#10B981", label: "지하철" },
-          { kind: "walk" as const, color: "#94A3B8", label: "도보" }
-        ]
-      : hasSubway
-        ? [
-            { kind: "walk" as const, color: "#94A3B8", label: "도보" },
-            { kind: "subway" as const, color: "#10B981", label: "지하철" },
-            { kind: "walk" as const, color: "#94A3B8", label: "도보" }
-          ]
-        : [
-            { kind: "walk" as const, color: "#94A3B8", label: "도보" },
-            { kind: "bus" as const, color: "#65A30D", label: "버스" },
-            { kind: "walk" as const, color: "#94A3B8", label: "도보" }
-          ];
-
-  return chunks.map((chunk, index) => ({
-    ...colors[index % colors.length],
-    path: chunk
-  }));
-}
-
-async function estimateRoute({
-  mode,
-  startLat,
-  startLng,
-  goalLat,
-  goalLng,
-  originQuery,
-  destinationQuery,
-  roadPath = []
-}: {
-  mode: RouteMode;
-  startLat: number;
-  startLng: number;
-  goalLat: number;
-  goalLng: number;
-  originQuery: string;
-  destinationQuery: string;
-  roadPath?: Array<{ lat: number; lng: number }>;
-}): Promise<RouteInfo> {
-  const meters = distanceMeters(startLat, startLng, goalLat, goalLng);
-  const formattedDistance = formatDistance(meters);
-  const km = meters / 1000;
-  const path =
-    roadPath.length > 0
-      ? roadPath
-      : [
-          { lat: startLat, lng: startLng },
-          { lat: goalLat, lng: goalLng }
-        ];
-  const minutesByMode = {
-    transit: Math.max(12, km * 5 + 10),
-    walk: Math.max(3, km * 13),
-    bike: Math.max(2, km * 4),
-    car: Math.max(2, km * 3)
-  };
-  const titleByMode = {
-    transit: "대중교통 추천 경로",
-    car: "자동차 빠른 경로",
-    walk: "도보 예상 경로",
-    bike: "자전거 예상 경로"
-  };
-
-  const transit =
-    mode === "transit"
-      ? await getTransitArrivals({
-          start: { lat: startLat, lng: startLng },
-          goal: { lat: goalLat, lng: goalLng },
-          originQuery,
-          destinationQuery,
-          distance: formattedDistance
-        })
-      : null;
-  const primaryPlan = transit?.plans[0];
-  const primaryLegs = primaryPlan?.legs ?? transit?.legs ?? [];
-  const hasSubway =
-    primaryPlan?.primaryType === "subway" ||
-    primaryPlan?.primaryType === "mixed" ||
-    !!transit?.arrivals.some((arrival) => arrival.type === "subway");
-  const hasBus =
-    primaryPlan?.primaryType === "bus" ||
-    primaryPlan?.primaryType === "mixed" ||
-    !!transit?.arrivals.some((arrival) => arrival.type === "bus");
-
-  return {
-    mode,
-    distance: primaryPlan?.distance ?? formattedDistance,
-    duration: primaryPlan?.duration ?? formatDurationFromMinutes(minutesByMode[mode]),
-    title: mode === "transit" ? primaryPlan?.title ?? titleByMode.transit : titleByMode[mode],
-    summary:
-      mode === "transit"
-        ? primaryPlan?.summary ??
-          "현재 시간 기준으로 가까운 버스 정류장과 지하철역 정보를 함께 계산했습니다."
-        : mode === "car"
-          ? "도로 기반 경로를 구간별 교통 상태 색상으로 표시합니다."
-          : "좌표 기준 예상 경로입니다.",
-    steps:
-      mode === "transit"
-        ? primaryLegs.length
-          ? primaryLegs.map((leg) => `${leg.title}: ${leg.from} → ${leg.to} (${leg.duration})`)
-          : [
-              "출발지 주변 정류장 또는 지하철역 확인",
-              "버스 도착 예정 시간과 지하철 후보 확인",
-              "목적지 주변 정류장 또는 역에서 하차",
-              "목적지까지 도보 이동"
-            ]
-        : mode === "walk"
-          ? ["보행 가능한 도로를 따라 이동", "횡단보도와 보행자 통로 우선 확인", "목적지 도착"]
-          : mode === "bike"
-            ? ["자전거 주행 가능한 도로로 이동", "하천길 또는 자전거도로 우선 확인", "목적지 주변 거치대 확인"]
-            : ["출발지에서 출발", "교통 상태가 좋은 도로로 이동", "목적지 주변 도착"],
-    transitLines:
-      mode === "transit"
-        ? transit?.arrivals.length
-          ? transit.arrivals.map((arrival) => arrival.title).slice(0, 6)
-          : ["TAGO 응답 없음"]
-        : undefined,
-    transitArrivals: transit?.arrivals,
-    transitLegs: primaryLegs,
-    transitPlans: transit?.plans,
-    routeSegments:
-      mode === "transit"
-        ? buildTransitSegments(path, hasSubway, hasBus)
-        : mode === "car"
-          ? buildCarSegments(path)
-          : [{ kind: mode, color: mode === "walk" ? "#64748B" : "#2563EB", label: titleByMode[mode], path }],
-    busArrivalNotice: mode === "transit" ? transit?.notice || undefined : undefined,
-    path
-  };
-}
-
-async function getDrivingRoute(startLat: number, startLng: number, goalLat: number, goalLng: number) {
-  const clientId =
-    process.env.NAVER_CLOUD_MAP_CLIENT_ID ||
-    process.env.NAVER_MAPS_CLIENT_ID ||
-    process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
-  const clientSecret = process.env.NAVER_CLOUD_MAP_CLIENT_SECRET || process.env.NAVER_MAPS_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    return null;
-  }
-
-  const apiUrl = new URL("https://maps.apigw.ntruss.com/map-direction/v1/driving");
-  apiUrl.searchParams.set("start", `${startLng},${startLat}`);
-  apiUrl.searchParams.set("goal", `${goalLng},${goalLat}`);
-  apiUrl.searchParams.set("option", "trafast");
-
-  const response = await fetch(apiUrl, {
-    headers: {
-      "x-ncp-apigw-api-key-id": clientId,
-      "x-ncp-apigw-api-key": clientSecret
-    },
-    cache: "no-store"
-  });
-  const data = (await response.json()) as DirectionResponse;
+async function driving(start: { lat: number; lng: number }, goal: { lat: number; lng: number }, signal: AbortSignal): Promise<RouteInfo> {
+  const id = process.env.NAVER_CLOUD_MAP_CLIENT_ID || process.env.NAVER_MAPS_CLIENT_ID || process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
+  const secret = process.env.NAVER_CLOUD_MAP_CLIENT_SECRET || process.env.NAVER_MAPS_CLIENT_SECRET;
+  if (!id || !secret) throw new ApiError(503, "자동차 길찾기 API 설정이 필요합니다.");
+  const url = new URL("https://maps.apigw.ntruss.com/map-direction/v1/driving");
+  url.searchParams.set("start", `${start.lng},${start.lat}`);
+  url.searchParams.set("goal", `${goal.lng},${goal.lat}`);
+  url.searchParams.set("option", "trafast");
+  const data = await fetchApiJson<DirectionsResponse>(url, {
+    headers: { "x-ncp-apigw-api-key-id": id, "x-ncp-apigw-api-key": secret }
+  }, signal);
+  if (data.code !== 0) throw new ApiError(422, "자동차 경로를 찾지 못했습니다. 도로에 가까운 출발지와 도착지를 선택해주세요.");
   const route = data.route?.trafast?.[0];
-
-  if (!response.ok || !route?.summary || !route.path) {
-    return null;
+  const distance = route?.summary?.distance;
+  const time = route?.summary?.duration;
+  if (!route || !Array.isArray(route.path) || route.path.length < 2 ||
+      typeof distance !== "number" || !Number.isFinite(distance) || distance < 0 ||
+      typeof time !== "number" || !Number.isFinite(time) || time < 0) {
+    throw new ApiError(502, "자동차 경로 응답을 처리하지 못했습니다.");
   }
-
-  const path = route.path.map(([lng, lat]) => ({ lat, lng }));
-
+  const path = route.path.map(point => ({ lng: point?.[0], lat: point?.[1] }));
+  if (!path.every(isValidPoint)) throw new ApiError(502, "경로 좌표가 올바르지 않습니다.");
+  const segments: RouteSegment[] = [{ kind: "car", color: "#2563EB", label: "자동차 경로", path }];
+  const traffic: Record<number, { traffic: TrafficLevel; color: string; label: string }> = {
+    1: { traffic: "smooth", color: "#16A34A", label: "원활" },
+    2: { traffic: "slow", color: "#F59E0B", label: "서행" },
+    3: { traffic: "jam", color: "#EF4444", label: "정체" }
+  };
+  // Only provider-reported sections receive traffic colors.
+  for (const section of Array.isArray(route.section) ? route.section : []) {
+    const state = traffic[section.congestion];
+    const end = section.pointIndex + section.pointCount;
+    if (!state || !Number.isInteger(section.pointIndex) || !Number.isInteger(section.pointCount) ||
+        section.pointIndex < 0 || section.pointCount < 2 || end > path.length) continue;
+    segments.push({ kind: "traffic", ...state, path: path.slice(section.pointIndex, end) });
+  }
   return {
-    mode: "car" as RouteMode,
-    distance: formatDistance(route.summary.distance ?? 0),
-    duration: formatDurationFromMinutes((route.summary.duration ?? 0) / 1000 / 60),
-    title: "자동차 빠른 경로",
-    summary: "네이버 Directions 5 자동차 경로를 기준으로 계산했습니다.",
-    steps: ["출발지에서 출발", "교통 상태가 좋은 도로로 이동", "목적지 주변 도착"],
-    routeSegments: buildCarSegments(path),
-    path
+    mode: "car", source: "road", checkedAt: new Date().toISOString(),
+    distance: formatDistance(distance), duration: duration(time), title: "자동차 빠른 경로",
+    summary: "네이버 Directions 5 조회 경로입니다. 교통 상태는 응답에 포함된 구간에만 표시합니다.",
+    steps: (Array.isArray(route.guide) ? route.guide : []).map(item => item.instructions)
+      .filter((text): text is string => typeof text === "string" && !!text.trim()).slice(0, 100),
+    routeSegments: segments, path
   };
 }
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const startLat = Number(searchParams.get("startLat"));
-  const startLng = Number(searchParams.get("startLng"));
-  const goalLat = Number(searchParams.get("goalLat"));
-  const goalLng = Number(searchParams.get("goalLng"));
-  const mode = (searchParams.get("mode") as RouteMode | null) ?? "car";
-  const originQuery = searchParams.get("originQuery") ?? "";
-  const destinationQuery = searchParams.get("destinationQuery") ?? "";
-
-  if (![startLat, startLng, goalLat, goalLng].every(Number.isFinite)) {
-    return NextResponse.json({ message: "출발지와 도착지 좌표가 필요합니다." }, { status: 400 });
-  }
-
-  const drivingRoute = await getDrivingRoute(startLat, startLng, goalLat, goalLng);
-
-  if (mode === "car" && drivingRoute) {
-    return NextResponse.json(drivingRoute);
-  }
-
-  return NextResponse.json(
-    await estimateRoute({
-      mode,
-      startLat,
-      startLng,
-      goalLat,
-      goalLng,
-      originQuery,
-      destinationQuery,
-      roadPath: drivingRoute?.path ?? []
-    })
-  );
+  const scope = requestScope(request);
+  try {
+    validateRequest(request);
+    const params = new URL(request.url).searchParams;
+    const mode = (params.get("mode") || "car") as RouteMode;
+    if (!["car", "transit", "walk", "bike"].includes(mode)) throw new ApiError(400, "이동 수단을 확인해주세요.");
+    const start = { lat: readCoordinate(params, "startLat", 90), lng: readCoordinate(params, "startLng", 180) };
+    const goal = { lat: readCoordinate(params, "goalLat", 90), lng: readCoordinate(params, "goalLng", 180) };
+    const originQuery = params.get("originQuery")?.trim() || "";
+    const destinationQuery = params.get("destinationQuery")?.trim() || "";
+    if (originQuery.length > 200 || destinationQuery.length > 200) throw new ApiError(400, "장소명은 200자까지 입력할 수 있습니다.");
+    if (start.lat === goal.lat && start.lng === goal.lng) throw new ApiError(400, "출발지와 도착지가 같습니다.");
+    if (mode === "car") return NextResponse.json(await driving(start, goal, scope.signal));
+    const distance = formatDistance(calculateDistanceMeters(start, goal));
+    if (mode === "transit") {
+      const transit = await getTransitArrivals({ start, goal, originQuery, destinationQuery, distance, signal: scope.signal });
+      return NextResponse.json({
+        mode, source: "transit-candidates", checkedAt: new Date().toISOString(),
+        distance: `직선 ${distance}`, duration: "미확인", title: "대중교통 이용 후보",
+        summary: "주변 정류장·역의 조회 결과입니다. 목적지 연결, 환승, 전체 이동 시간과 요금은 확인되지 않았습니다.",
+        steps: ["출발지·도착지 주변 정보를 확인하세요.", "해당 노선의 목적지 운행 여부를 별도로 확인하세요."],
+        transitArrivals: transit.arrivals, transitPlans: transit.plans, transitLegs: transit.legs,
+        busArrivalNotice: transit.notice || undefined, path: []
+      } satisfies RouteInfo);
+    }
+    const label = mode === "walk" ? "도보" : "자전거";
+    const path = [start, goal];
+    return NextResponse.json({
+      mode, source: "reference", checkedAt: new Date().toISOString(),
+      distance: `직선 ${distance}`, duration: "미확인", title: `${label} 이동 참고`,
+      summary: "점선은 두 지점을 연결한 참고선이며 실제 이동 경로가 아닙니다. 도로·통행 가능 여부와 이동 시간은 확인되지 않았습니다.",
+      steps: ["표시된 거리는 출발지와 도착지의 직선 거리입니다.", "실제 이동 전 통행 가능한 경로를 확인하세요."],
+      routeSegments: [{ kind: mode, color: mode === "walk" ? "#64748B" : "#2563EB", label: "직선 참고선", path }],
+      path
+    } satisfies RouteInfo);
+  } catch (error) {
+    const failure = publicError(error);
+    return NextResponse.json({ message: failure.message }, { status: failure.status });
+  } finally { scope.dispose(); }
 }
+

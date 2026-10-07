@@ -33,3 +33,67 @@ input {
     linear-gradient(90deg, rgba(37, 99, 235, 0.08) 1px, transparent 1px);
   background-size: 48px 48px;
 }
+
+body {
+  letter-spacing: 0;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+button:focus-visible, [role="button"]:focus-visible, a:focus-visible, select:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+
+input:focus-visible {
+  box-shadow: inset 0 -2px #2563eb;
+}
+
+aside, article, section, p, h1, h2, h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.overflow-y-auto {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.jidoro-viewport {
+  height: var(--visible-height, 100dvh);
+}
+
+.jidoro-sheet {
+  bottom: var(--keyboard-bottom, 0px);
+  max-height: calc(var(--visible-height, 100dvh) - 76px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.sheet-peek { height: 176px; }
+.sheet-half { height: calc(var(--visible-height, 100dvh) * 0.52); }
+.sheet-full { height: calc(var(--visible-height, 100dvh) - 88px); }
+.map-bottom-controls { bottom: calc(var(--map-overlay, 0px) + 12px); }
+.map-roadview { bottom: calc(var(--map-overlay, 0px) + 12px); }
+.map-controls button { pointer-events: auto; }
+@media (max-width: 1023px) {
+  .jidoro-sheet aside > .overflow-y-auto { min-height: 80px; }
+  .map-controls-covered { display: none; }
+  .map-controls-compact .map-bottom-controls > p { display: none; }
+  .map-bottom-controls > p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+}
+
+@media (min-width: 1024px) {
+  .jidoro-viewport { height: 100dvh; }
+  .jidoro-sheet { height: 100%; max-height: none; padding-bottom: 0; bottom: auto; }
+  .map-bottom-controls, .map-roadview { bottom: 16px; }
+}
+
+@media (max-width: 380px) {
+  .route-mode { height: 48px; flex-direction: column; gap: 2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}

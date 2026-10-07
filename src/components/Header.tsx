@@ -6,6 +6,7 @@ import LogoMark from "@/components/LogoMark";
 interface HeaderProps {
   query: string;
   favoritesActive: boolean;
+  isLocating: boolean;
   onQueryChange: (query: string) => void;
   onCurrentLocation: () => void;
   onToggleFavorites: () => void;
@@ -14,6 +15,7 @@ interface HeaderProps {
 export default function Header({
   query,
   favoritesActive,
+  isLocating,
   onQueryChange,
   onCurrentLocation,
   onToggleFavorites
@@ -36,6 +38,10 @@ export default function Header({
             aria-hidden="true"
           />
           <input
+            aria-label="장소명 또는 주소 검색"
+            maxLength={200}
+            enterKeyHint="search"
+            onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="장소명 또는 주소를 검색하세요"
@@ -47,6 +53,7 @@ export default function Header({
               onClick={() => onQueryChange("")}
               className="absolute right-3 flex size-7 items-center justify-center rounded-md text-jidoro-muted hover:bg-slate-100 hover:text-jidoro-ink"
               title="검색어 지우기"
+              aria-label="검색어 지우기"
             >
               <X size={16} aria-hidden="true" />
             </button>
@@ -57,6 +64,7 @@ export default function Header({
           <button
             type="button"
             onClick={onCurrentLocation}
+            disabled={isLocating}
             className="hidden h-11 items-center justify-center gap-2 rounded-2xl border border-jidoro-line bg-white px-3 text-sm font-semibold text-jidoro-ink transition hover:border-jidoro-blue hover:bg-blue-50 hover:text-jidoro-blue lg:inline-flex"
             title="현재 위치"
           >
@@ -66,6 +74,7 @@ export default function Header({
           <button
             type="button"
             onClick={onToggleFavorites}
+            aria-pressed={favoritesActive}
             className={`hidden h-11 items-center justify-center gap-2 rounded-2xl border px-3 text-sm font-semibold transition lg:inline-flex ${
               favoritesActive
                 ? "border-rose-200 bg-rose-50 text-rose-600"

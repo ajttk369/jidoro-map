@@ -45,7 +45,7 @@ export default function PlaceCard({
         <button type="button" onClick={() => onSelect(place)} className="min-w-0 flex-1 text-left">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <h3 className="truncate text-[15px] font-extrabold text-jidoro-ink">{place.name}</h3>
+              <h3 title={place.name} className="line-clamp-2 break-words text-[15px] font-extrabold text-jidoro-ink">{place.name}</h3>
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-jidoro-blue">
                   {place.category}
@@ -90,6 +90,8 @@ export default function PlaceCard({
         <button
           type="button"
           onClick={() => onToggleFavorite(place)}
+          aria-pressed={favorite}
+          aria-label={favorite ? `${place.name} 저장 해제` : `${place.name} 저장`}
           className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border px-2 text-xs font-bold transition ${
             favorite
               ? "border-rose-200 bg-rose-50 text-rose-600"
@@ -97,7 +99,7 @@ export default function PlaceCard({
           }`}
         >
           <Heart size={14} fill={favorite ? "currentColor" : "none"} aria-hidden="true" />
-          저장
+          {favorite ? "저장됨" : "저장"}
         </button>
       </div>
     </article>

@@ -21,6 +21,8 @@ import type { RouteInfo, RouteMode, TransitArrival, TransitLeg, TransitPlan } fr
 
 interface DirectionsPanelProps {
   routeMode: RouteMode;
+  isLoading: boolean;
+  isLocating: boolean;
   routeInfo: RouteInfo | null;
   routeMessage: string;
   originQuery: string;
@@ -43,6 +45,8 @@ const routeModes: Array<{ value: RouteMode; label: string; icon: typeof Bus }> =
 
 export default function DirectionsPanel({
   routeMode,
+  isLoading,
+  isLocating,
   routeInfo,
   routeMessage,
   originQuery,
@@ -55,23 +59,29 @@ export default function DirectionsPanel({
   onSubmitRoute,
   onBack
 }: DirectionsPanelProps) {
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<TransitPlan | null>(null);
+  const [detailSelection, setDetailSelection] = useState<{ route: RouteInfo; planId?: string } | null>(null);
+  const detailOpen = detailSelection?.route === routeInfo;
+  const selectedPlan = routeInfo?.transitPlans?.find(plan => plan.id === detailSelection?.planId) ?? null;
 
   const openDetail = (plan?: TransitPlan) => {
-    setSelectedPlan(plan ?? routeInfo?.transitPlans?.[0] ?? null);
-    setDetailOpen(true);
+    if (routeInfo) setDetailSelection({ route: routeInfo, planId: plan?.id ?? routeInfo.transitPlans?.[0]?.id });
   };
 
   return (
-    <aside className="relative flex h-full flex-col border-r border-slate-200 bg-slate-50/95 shadow-[8px_0_30px_rgba(15,23,42,0.06)] lg:w-[430px] lg:shrink-0">
-      <div className="border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
+    <aside className="relative flex h-full flex-col overflow-y-auto border-r border-slate-200 bg-slate-50/95 shadow-[8px_0_30px_rgba(15,23,42,0.06)] lg:w-[430px] lg:shrink-0 lg:overflow-visible">
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        if (isLoading || !originQuery.trim() || !destinationQuery.trim()) return;
+        if (document.activeElement instanceof HTMLInputElement) document.activeElement.blur();
+        onSubmitRoute();
+      }} className="shrink-0 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur lg:px-5">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onBack}
             className="flex size-9 items-center justify-center rounded-xl text-jidoro-ink transition hover:bg-slate-100"
             title="뒤로"
+            aria-label="길찾기 닫기"
           >
             <ArrowLeft size={20} />
           </button>
@@ -91,7 +101,8 @@ export default function DirectionsPanel({
                 key={mode.value}
                 type="button"
                 onClick={() => onRouteModeChange(mode.value)}
-                className={`flex h-10 items-center justify-center gap-1.5 rounded-xl text-xs font-extrabold transition ${
+                aria-pressed={selected}
+                className={`route-mode flex h-10 items-center justify-center gap-1.5 rounded-xl text-xs font-extrabold transition ${
                   selected ? "bg-jidoro-blue text-white shadow-md shadow-blue-500/20" : "text-jidoro-ink hover:bg-white"
                 }`}
               >
@@ -106,8 +117,9 @@ export default function DirectionsPanel({
           <button
             type="button"
             onClick={onSwapRoute}
-            className="absolute right-3 top-1/2 z-10 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-jidoro-muted shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-jidoro-blue"
+            className="absolute right-3 bottom-4 z-10 flex size-8 items-center justify-center rounded-full border border-slate-200 bg-white text-jidoro-muted shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-jidoro-blue"
             title="출발/도착 바꾸기"
+            aria-label="출발지와 도착지 바꾸기"
           >
             <RefreshCcw size={15} />
           </button>
@@ -116,6 +128,8 @@ export default function DirectionsPanel({
             <span className="size-2 rounded-full bg-jidoro-green" />
             <input
               value={originQuery}
+              aria-label="출발지"
+              maxLength={200}
               onChange={(event) => onOriginChange(event.target.value)}
               placeholder="출발지 입력"
               className="h-10 min-w-0 bg-transparent text-sm font-semibold text-jidoro-ink outline-none placeholder:text-jidoro-muted"
@@ -123,6 +137,8 @@ export default function DirectionsPanel({
             <button
               type="button"
               onClick={onUseCurrentLocationAsOrigin}
+              disabled={isLocating}
+              aria-label="현재 위치를 출발지로 사용"
               className="flex size-9 items-center justify-center rounded-lg text-jidoro-blue hover:bg-blue-50"
               title="현재 위치를 출발지로 사용"
             >
@@ -134,9 +150,11 @@ export default function DirectionsPanel({
             <span className="size-2 rounded-full bg-rose-500" />
             <input
               value={destinationQuery}
+              aria-label="도착지"
+              maxLength={200}
               onChange={(event) => onDestinationChange(event.target.value)}
               placeholder="도착지 입력"
-              className="h-10 min-w-0 bg-transparent pr-8 text-sm font-semibold text-jidoro-ink outline-none placeholder:text-jidoro-muted"
+              className="h-10 min-w-0 bg-transparent text-sm font-semibold text-jidoro-ink outline-none placeholder:text-jidoro-muted"
             />
             <span />
           </label>
@@ -155,20 +173,20 @@ export default function DirectionsPanel({
             다시입력
           </button>
           <button
-            type="button"
-            onClick={onSubmitRoute}
+            type="submit"
+            disabled={isLoading || !originQuery.trim() || !destinationQuery.trim()}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-jidoro-blue text-sm font-extrabold text-white shadow-md shadow-blue-500/20 transition hover:bg-blue-700"
           >
             <Route size={16} />
-            길찾기
+            {isLoading ? "조회 중" : "길찾기"}
             <ArrowRight size={16} />
           </button>
         </div>
-      </div>
+      </form>
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-4">
         {routeMessage ? (
-          <p className="mb-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold leading-6 text-jidoro-muted shadow-sm">
+          <p role="status" className="mb-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold leading-6 text-jidoro-muted shadow-sm">
             {routeMessage}
           </p>
         ) : null}
@@ -190,7 +208,7 @@ export default function DirectionsPanel({
       </div>
 
       {detailOpen && routeInfo ? (
-        <RouteDetailDrawer routeInfo={routeInfo} plan={selectedPlan} onClose={() => setDetailOpen(false)} />
+        <RouteDetailDrawer routeInfo={routeInfo} plan={selectedPlan} onClose={() => setDetailSelection(null)} />
       ) : null}
     </aside>
   );
@@ -203,13 +221,13 @@ function RouteSummaryCard({ routeInfo, onDetail }: { routeInfo: RouteInfo; onDet
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-extrabold text-jidoro-blue">{routeInfo.title}</p>
-            <div className="mt-2 flex items-end gap-2">
+            <div className="mt-2 flex flex-wrap items-end gap-2">
               <p className="text-3xl font-black text-jidoro-ink">{routeInfo.duration}</p>
               <p className="pb-1 text-sm font-semibold text-jidoro-muted">{routeInfo.distance}</p>
             </div>
           </div>
           <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-extrabold text-jidoro-blue">
-            추천
+            {routeInfo.source === "road" ? "조회 경로" : "참고"}
           </span>
         </div>
         <RouteBar routeInfo={routeInfo} />
@@ -241,9 +259,9 @@ function TransitPlansSection({
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-extrabold text-jidoro-ink">대중교통 추천 경로</p>
+        <p className="text-sm font-extrabold text-jidoro-ink">대중교통 이용 후보</p>
         <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold text-jidoro-blue">
-          현재 시간 기준
+          주변 정보
         </span>
       </div>
       {plans.map((plan, index) => (
@@ -277,8 +295,8 @@ function TransitPlanCard({
               <Icon size={15} />
               {plan.label}
             </p>
-            <div className="mt-2 flex items-end gap-2">
-              <p className="text-3xl font-black text-jidoro-ink">{plan.duration}</p>
+            <div className="mt-2 flex flex-wrap items-end gap-2">
+              <p className="text-xl font-black text-jidoro-ink">{plan.duration === "미확인" ? "이동 시간 미확인" : plan.duration}</p>
               <p className="pb-1 text-sm font-semibold text-jidoro-muted">{plan.distance}</p>
             </div>
           </div>
@@ -356,7 +374,7 @@ function TransitSection({ routeInfo }: { routeInfo: RouteInfo }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-extrabold text-jidoro-ink">실시간 교통 정보</p>
+        <p className="text-sm font-extrabold text-jidoro-ink">정류장·역 조회 정보</p>
         <span className="rounded-full bg-jidoro-surface px-2 py-1 text-[11px] font-bold text-jidoro-muted">
           TAGO
         </span>
@@ -384,11 +402,13 @@ function TransitSection({ routeInfo }: { routeInfo: RouteInfo }) {
 }
 
 function TrafficLegend({ routeInfo }: { routeInfo: RouteInfo }) {
-  const segments = routeInfo.routeSegments ?? [];
+  const segments = Array.from(new Map((routeInfo.routeSegments ?? []).filter(segment => segment.traffic)
+    .map(segment => [segment.traffic, segment])).values());
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-sm font-extrabold text-jidoro-ink">교통 상태</p>
+      {!segments.length ? <p className="mt-2 text-xs text-jidoro-muted">구간별 교통 정보 미제공</p> : null}
       <div className="mt-3 flex flex-wrap gap-2">
         {segments.map((segment, index) => (
           <span
@@ -407,14 +427,14 @@ function TrafficLegend({ routeInfo }: { routeInfo: RouteInfo }) {
 function StepsSection({ routeInfo }: { routeInfo: RouteInfo }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-sm font-extrabold text-jidoro-ink">상세 경로</p>
+      <p className="text-sm font-extrabold text-jidoro-ink">{routeInfo.source === "road" ? "상세 경로" : "이동 정보"}</p>
       <ol className="mt-3 space-y-3">
         {routeInfo.steps.map((step, index) => (
           <li key={`${step}-${index}`} className="flex gap-3 text-sm leading-6 text-jidoro-muted">
             <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-jidoro-blue text-xs font-bold text-white">
               {index + 1}
             </span>
-            <span>{step}</span>
+            <span className="min-w-0 flex-1">{step}</span>
           </li>
         ))}
       </ol>
@@ -481,10 +501,10 @@ function RouteDetailDrawer({
         <div className="border-b border-jidoro-line p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-extrabold text-jidoro-blue">{plan?.label ?? "최적"}</p>
-              <p className="mt-1 text-3xl font-black text-jidoro-ink">{plan?.duration ?? routeInfo.duration}</p>
+              <p className="text-sm font-extrabold text-jidoro-blue">{plan?.label ?? routeInfo.title}</p>
+              <p className="mt-1 text-2xl font-black text-jidoro-ink">{plan?.duration ?? routeInfo.duration}</p>
               <p className="mt-1 text-sm font-semibold text-jidoro-muted">
-                환승 0회 · {plan?.distance ?? routeInfo.distance} · {plan?.fare ?? "요금 정보 없음"}
+                {plan?.distance ?? routeInfo.distance}{routeInfo.mode === "transit" ? " · 연결·환승 미확인" : ""}
               </p>
               {plan ? (
                 <p className="mt-1 text-xs font-semibold text-jidoro-muted">
@@ -497,6 +517,7 @@ function RouteDetailDrawer({
               onClick={onClose}
               className="flex size-9 items-center justify-center rounded-lg text-jidoro-ink hover:bg-jidoro-surface"
               title="닫기"
+              aria-label="경로 상세 닫기"
             >
               <X size={21} />
             </button>
@@ -518,7 +539,7 @@ function RouteDetailDrawer({
 
         <div className="border-t border-jidoro-line p-4">
           <p className="text-right text-sm font-semibold text-jidoro-muted">
-            현재 {new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 기준
+            {routeInfo.checkedAt ? `${new Date(routeInfo.checkedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" })} 조회 기준` : "조회 시각 미확인"}
           </p>
         </div>
       </div>
@@ -562,7 +583,7 @@ function TransitLegRow({ leg, first, last }: { leg: TransitLeg; first: boolean; 
             <p className="text-sm font-extrabold" style={{ color: leg.color }}>
               {leg.title}
             </p>
-            <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-xs font-bold text-jidoro-muted">
+            <span className="inline-flex max-w-[120px] shrink-0 items-center gap-1 rounded-full bg-white px-2 py-1 text-xs font-bold text-jidoro-muted">
               <Clock3 size={12} />
               {leg.duration}
             </span>

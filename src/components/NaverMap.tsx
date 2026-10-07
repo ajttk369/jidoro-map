@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
+import { hasCoordinates, isValidPoint } from "@/lib/placeUtils";
 import { LocateFixed, MapPin, Minus, Plus, RefreshCcw, ScanSearch, X } from "lucide-react";
 import type { Place, RouteInfo, RouteSegment } from "@/types/place";
 
 interface NaverMapProps {
   places: Place[];
+  mobileOverlayHeight: number;
+  isLocating: boolean;
   selectedPlace: Place | null;
   routeInfo: RouteInfo | null;
   userLocation: { lat: number; lng: number } | null;
@@ -45,7 +49,7 @@ function markerContent(label: number, place: Place, selected: boolean) {
 }
 
 function getPlaceLatLng(place: Place, maps: typeof naver.maps) {
-  if (typeof place.lat === "number" && typeof place.lng === "number") {
+  if (hasCoordinates(place)) {
     return new maps.LatLng(place.lat, place.lng);
   }
 
@@ -65,6 +69,8 @@ function getFallbackSegments(routeInfo: RouteInfo): RouteSegment[] {
 
 export default function NaverMap({
   places,
+  mobileOverlayHeight,
+  isLocating,
   selectedPlace,
   routeInfo,
   userLocation,
@@ -84,6 +90,12 @@ export default function NaverMap({
   const panoramaElementRef = useRef<HTMLDivElement | null>(null);
   const panoramaRef = useRef<naver.maps.Panorama | null>(null);
   const [status, setStatus] = useState<MapStatus>("idle");
+  const [retryToken, setRetryToken] = useState(0);
+  const [roadviewError, setRoadviewError] = useState("");
+  const overlayHeightRef = useRef(mobileOverlayHeight);
+  const routeInfoRef = useRef(routeInfo);
+  overlayHeightRef.current = mobileOverlayHeight;
+  routeInfoRef.current = routeInfo;
   const clientId = process.env.NEXT_PUBLIC_NAVER_MAP_CLIENT_ID;
 
   useEffect(() => {
@@ -92,26 +104,32 @@ export default function NaverMap({
       return;
     }
 
-    if (window.naver?.maps) {
+    if (window.naver?.maps?.Map) {
       setStatus("ready");
       return;
     }
 
-    const existingScript = document.getElementById("naver-map-script");
-    if (existingScript) {
-      existingScript.addEventListener("load", () => setStatus("ready"), { once: true });
-      existingScript.addEventListener("error", () => setStatus("error"), { once: true });
-      return;
-    }
-
-    const script = document.createElement("script");
+    setStatus("idle");
+    const existingScript = document.getElementById("naver-map-script") as HTMLScriptElement | null;
+    const script = existingScript ?? document.createElement("script");
     script.id = "naver-map-script";
-    script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${clientId}&submodules=panorama`;
+    if (!existingScript) script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(clientId)}&submodules=panorama`;
     script.async = true;
-    script.onload = () => setStatus("ready");
-    script.onerror = () => setStatus("error");
-    document.head.appendChild(script);
-  }, [clientId]);
+    const loaded = () => {
+      window.clearTimeout(timeout);
+      setStatus(window.naver?.maps?.Map ? "ready" : "error");
+    };
+    const failed = () => { window.clearTimeout(timeout); setStatus("error"); };
+    script.addEventListener("load", loaded);
+    script.addEventListener("error", failed);
+    const timeout = window.setTimeout(failed, 15000);
+    if (!existingScript) document.head.appendChild(script);
+    return () => {
+      window.clearTimeout(timeout);
+      script.removeEventListener("load", loaded);
+      script.removeEventListener("error", failed);
+    };
+  }, [clientId, retryToken]);
 
   useEffect(() => {
     if (status !== "ready" || !mapElementRef.current || !window.naver?.maps) {
@@ -120,7 +138,7 @@ export default function NaverMap({
 
     const maps = window.naver.maps;
 
-    if (!mapRef.current) {
+    try {
       mapRef.current = new maps.Map(mapElementRef.current, {
         center: new maps.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng),
         zoom: 15,
@@ -134,7 +152,25 @@ export default function NaverMap({
           onMapCenterChange({ lat: center.lat(), lng: center.lng() });
         }
       });
+      onMapCenterChange(DEFAULT_CENTER);
+    } catch {
+      setStatus("error");
     }
+    return () => {
+      markerRefs.current.forEach(marker => { maps.Event.clearInstanceListeners(marker); marker.setMap(null); });
+      markerRefs.current = [];
+      routeLineRefs.current.forEach(line => line.setMap(null));
+      routeLineRefs.current = [];
+      userMarkerRef.current?.setMap(null);
+      userMarkerRef.current = null;
+      if (panoramaRef.current) {
+        maps.Event.clearInstanceListeners(panoramaRef.current);
+        panoramaRef.current.setVisible(false);
+        panoramaRef.current = null;
+      }
+      mapRef.current?.destroy();
+      mapRef.current = null;
+    };
   }, [onMapCenterChange, status]);
 
   useEffect(() => {
@@ -151,21 +187,20 @@ export default function NaverMap({
       const width = element.clientWidth;
       const height = element.clientHeight;
 
-      if (width > 0 && height > 0) {
+      const size = map.getSize();
+      if (width > 0 && height > 0 && (size.width !== width || size.height !== height)) {
         map.setSize(new maps.Size(width, height));
-      }
-
-      maps.Event.trigger(map, "resize");
-      if (center) {
-        map.setCenter(center);
+        maps.Event.trigger(map, "resize");
+        if (center) map.setCenter(center);
       }
     };
 
     resizeMap();
-    const frame = window.requestAnimationFrame(resizeMap);
+    let frame = window.requestAnimationFrame(resizeMap);
     const timer = window.setTimeout(resizeMap, 250);
     const observer = new ResizeObserver(() => {
-      window.requestAnimationFrame(resizeMap);
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(resizeMap);
     });
 
     observer.observe(element);
@@ -187,7 +222,7 @@ export default function NaverMap({
     const map = mapRef.current;
     const maps = window.naver.maps;
 
-    markerRefs.current.forEach((marker) => marker.setMap(null));
+    markerRefs.current.forEach((marker) => { maps.Event.clearInstanceListeners(marker); marker.setMap(null); });
     markerRefs.current = places.flatMap((place, index) => {
       const position = getPlaceLatLng(place, maps);
 
@@ -210,14 +245,17 @@ export default function NaverMap({
       return [marker];
     });
 
-    const selectedPosition = selectedPlace ? getPlaceLatLng(selectedPlace, maps) : null;
-    const firstPosition = places[0] ? getPlaceLatLng(places[0], maps) : null;
-    const nextCenter = selectedPosition ?? firstPosition;
-
-    if (nextCenter) {
-      map.panTo(nextCenter);
-    }
   }, [onSelectPlace, places, selectedPlace, status]);
+
+  const selectedLat = selectedPlace?.lat;
+  const selectedLng = selectedPlace?.lng;
+  useEffect(() => {
+    const map = mapRef.current;
+    const maps = window.naver?.maps;
+    if (status !== "ready" || !map || !maps || routeInfo || !isValidPoint({ lat: selectedLat, lng: selectedLng })) return;
+    map.setCenter(new maps.LatLng(selectedLat!, selectedLng!));
+    if (overlayHeightRef.current) map.panBy(new maps.Point(0, Math.max(0, overlayHeightRef.current / 2 - 32)));
+  }, [selectedLat, selectedLng, status, routeInfo]);
 
   useEffect(() => {
     if (status !== "ready" || !mapRef.current || !window.naver?.maps) {
@@ -248,7 +286,11 @@ export default function NaverMap({
         anchor: new maps.Point(12, 12)
       }
     });
-    map.panTo(position);
+    if (!routeInfoRef.current) map.panTo(position);
+    if (!routeInfoRef.current && overlayHeightRef.current) {
+      map.setCenter(position);
+      map.panBy(new maps.Point(0, Math.max(0, overlayHeightRef.current / 2 - 32)));
+    }
   }, [status, userLocation]);
 
   useEffect(() => {
@@ -261,7 +303,7 @@ export default function NaverMap({
     routeLineRefs.current.forEach((line) => line.setMap(null));
     routeLineRefs.current = [];
 
-    if (!routeInfo?.path.length) {
+    if (!routeInfo?.path.length || !routeInfo.path.every(isValidPoint)) {
       return;
     }
 
@@ -269,7 +311,7 @@ export default function NaverMap({
     const segments = routeInfo.routeSegments?.length ? routeInfo.routeSegments : getFallbackSegments(routeInfo);
 
     routeLineRefs.current = segments.flatMap((segment) => {
-      if (segment.path.length < 2) {
+      if (segment.path.length < 2 || !segment.path.every(isValidPoint)) {
         return [];
       }
 
@@ -280,6 +322,7 @@ export default function NaverMap({
         strokeColor: segment.color,
         strokeOpacity: segment.traffic === "jam" ? 0.96 : 0.88,
         strokeWeight: segment.traffic === "jam" ? 8 : 7,
+        strokeStyle: routeInfo.source === "reference" ? "dash" : "solid",
         strokeLineCap: "round",
         strokeLineJoin: "round"
       });
@@ -287,13 +330,31 @@ export default function NaverMap({
       return [line];
     });
 
-    const boundsPath = routeInfo.path.map((point) => new maps.LatLng(point.lat, point.lng));
-    const bounds = new maps.LatLngBounds(boundsPath[0], boundsPath[0]);
-    boundsPath.forEach((position) => bounds.extend(position));
-    map.fitBounds(bounds);
   }, [routeInfo, status]);
 
   useEffect(() => {
+    if (status !== "ready" || !routeInfo?.path.length || !routeInfo.path.every(isValidPoint)) return;
+    const timer = window.setTimeout(() => {
+      const map = mapRef.current;
+      const maps = window.naver?.maps;
+      if (!map || !maps) return;
+      const points = routeInfo.path.map(point => new maps.LatLng(point.lat, point.lng));
+      const bounds = new maps.LatLngBounds(points[0], points[0]);
+      points.forEach(point => bounds.extend(point));
+      map.fitBounds(bounds, {
+        top: mobileOverlayHeight ? 90 : 48,
+        bottom: Math.min(mobileOverlayHeight + 40, Math.max(40, (mapElementRef.current?.clientHeight ?? 600) - 150)),
+        left: 40, right: 64, maxZoom: 17
+      });
+    }, 240);
+    return () => window.clearTimeout(timer);
+  }, [mobileOverlayHeight, routeInfo, status]);
+
+  useEffect(() => {
+    if (!roadviewOpen) {
+      panoramaRef.current?.setVisible(false);
+      return;
+    }
     if (
       status !== "ready" ||
       !roadviewOpen ||
@@ -311,19 +372,27 @@ export default function NaverMap({
       return;
     }
 
-    if (!panoramaRef.current) {
-      panoramaRef.current = new maps.Panorama(panoramaElementRef.current, {
-        position,
-        pov: {
-          pan: 0,
-          tilt: 0,
-          fov: 100
-        }
-      });
-    } else {
-      panoramaRef.current.setPosition(position);
+    setRoadviewError("");
+    if (!maps.Panorama) {
+      setRoadviewError("거리뷰를 불러오지 못했습니다. 지도 연결을 확인해주세요.");
+      return;
     }
-  }, [roadviewOpen, selectedPlace, status]);
+    try {
+      if (!panoramaRef.current) {
+        panoramaRef.current = new maps.Panorama(panoramaElementRef.current, {
+          position,
+          pov: { pan: 0, tilt: 0, fov: 100 }
+        });
+      } else {
+        const positionNow = panoramaRef.current.getPosition();
+        if (positionNow.lat() !== position.lat() || positionNow.lng() !== position.lng()) panoramaRef.current.setPosition(position);
+      }
+      panoramaRef.current.setVisible(true);
+      panoramaRef.current.setSize(new maps.Size(panoramaElementRef.current.clientWidth, panoramaElementRef.current.clientHeight));
+    } catch {
+      setRoadviewError("이 장소의 거리뷰를 불러오지 못했습니다.");
+    }
+  }, [mobileOverlayHeight, roadviewOpen, selectedPlace, status]);
 
   const zoomIn = () => {
     const map = mapRef.current;
@@ -341,9 +410,12 @@ export default function NaverMap({
 
   if (status === "ready") {
     return (
-      <section className="relative h-full min-h-[240px] overflow-hidden bg-slate-200 lg:min-h-[360px]">
+      <section style={{ "--map-overlay": `${mobileOverlayHeight}px` } as CSSProperties} className="relative h-full min-h-[240px] overflow-hidden bg-slate-200 lg:min-h-[360px]">
         <div ref={mapElementRef} className="h-full w-full" />
         <MapControls
+          availableHeight={mobileOverlayHeight ? (mapElementRef.current?.clientHeight ?? 600) - mobileOverlayHeight : 1000}
+          isLocating={isLocating}
+          canRoadview={hasCoordinates(selectedPlace)}
           locationMessage={locationMessage}
           routeInfo={routeInfo}
           roadviewOpen={roadviewOpen}
@@ -353,49 +425,56 @@ export default function NaverMap({
           onZoomIn={zoomIn}
           onZoomOut={zoomOut}
         />
-        {roadviewOpen ? (
-          <div className="absolute inset-x-4 bottom-4 top-16 z-20 overflow-hidden rounded-xl border border-jidoro-line bg-white shadow-panel md:inset-x-auto md:left-4 md:w-[440px]">
+          <div hidden={!roadviewOpen} className="map-roadview absolute inset-x-4 top-20 z-20 overflow-hidden rounded-xl border border-jidoro-line bg-white shadow-panel md:inset-x-auto md:left-4 md:w-[440px] lg:top-16">
             <div className="flex h-11 items-center justify-between border-b border-jidoro-line bg-white px-3">
               <div>
                 <p className="text-sm font-extrabold text-jidoro-ink">거리뷰</p>
-                <p className="text-xs text-jidoro-muted">{selectedPlace?.name || "선택한 장소"}</p>
+                <p className="max-w-[300px] truncate text-xs text-jidoro-muted">{selectedPlace?.name || "선택한 장소"}</p>
               </div>
               <button
                 type="button"
                 onClick={() => onToggleRoadview(false)}
                 className="flex size-8 items-center justify-center rounded-md text-jidoro-muted hover:bg-jidoro-surface"
                 title="거리뷰 닫기"
+                aria-label="거리뷰 닫기"
               >
                 <X size={17} />
               </button>
             </div>
             <div ref={panoramaElementRef} className="h-[calc(100%-44px)] w-full" />
+            {roadviewError ? <p role="alert" className="absolute inset-x-0 top-12 bg-white p-4 text-sm text-jidoro-muted">{roadviewError}</p> : null}
           </div>
-        ) : null}
       </section>
     );
   }
 
   return (
     <section className="map-grid relative flex h-full min-h-[240px] items-center justify-center overflow-hidden lg:min-h-[360px]">
-      <div className="relative mx-4 max-w-md rounded-xl border border-jidoro-line bg-white p-5 text-center shadow-panel">
+      <div style={{ marginBottom: mobileOverlayHeight }} className="relative mx-4 max-w-md rounded-xl border border-jidoro-line bg-white p-5 text-center shadow-panel">
         <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-blue-50 text-jidoro-blue">
           <MapPin size={24} aria-hidden="true" />
         </div>
         <h2 className="mt-4 text-lg font-extrabold text-jidoro-ink">
           {status === "error"
             ? "지도를 불러오지 못했습니다."
-            : "네이버 지도 API 키를 설정하면 이 영역에 지도가 표시됩니다."}
+            : status === "idle" ? "지도를 불러오는 중입니다." : "지도 연결 설정이 필요합니다."}
         </h2>
         <p className="mt-2 text-sm leading-6 text-jidoro-muted">
-          `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID`를 설정하면 검색 결과와 마커를 표시합니다.
+          {status === "idle" ? "잠시만 기다려주세요." : status === "error" ? "지도 서비스 연결을 확인해주세요." : "지도 서비스 연결이 설정되지 않았습니다."}
         </p>
+        {status === "error" ? <button type="button" onClick={() => {
+          document.getElementById("naver-map-script")?.remove();
+          setRetryToken(value => value + 1);
+        }} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-jidoro-blue px-3 py-2 text-sm font-bold text-white"><RefreshCcw size={16} />다시 연결</button> : null}
       </div>
     </section>
   );
 }
 
 function MapControls({
+  availableHeight,
+  isLocating,
+  canRoadview,
   locationMessage,
   routeInfo,
   roadviewOpen,
@@ -405,6 +484,9 @@ function MapControls({
   onZoomIn,
   onZoomOut
 }: {
+  availableHeight: number;
+  isLocating: boolean;
+  canRoadview: boolean;
   locationMessage: string;
   routeInfo: RouteInfo | null;
   roadviewOpen: boolean;
@@ -415,8 +497,8 @@ function MapControls({
   onZoomOut: () => void;
 }) {
   return (
-    <>
-      <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-2 lg:top-4">
+    <div className={`map-controls pointer-events-none absolute inset-0 ${availableHeight < 200 ? "map-controls-covered" : ""} ${availableHeight < 330 ? "map-controls-compact" : ""}`}>
+      <div className="absolute left-1/2 top-[76px] flex -translate-x-1/2 items-center gap-2 lg:top-4">
         <button
           type="button"
           onClick={onSearchHere}
@@ -426,34 +508,14 @@ function MapControls({
           이 지역에서 다시 검색
         </button>
       </div>
-      <div className="absolute right-3 top-24 flex flex-col gap-3 lg:hidden">
-        <button
-          type="button"
-          onClick={onToggleRoadview}
-          className={`flex size-12 items-center justify-center rounded-full border border-jidoro-line bg-white shadow-panel transition ${
-            roadviewOpen ? "text-jidoro-blue ring-4 ring-blue-100" : "text-jidoro-ink"
-          }`}
-          title="거리뷰"
-        >
-          <ScanSearch size={21} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          onClick={onCurrentLocation}
-          className="flex size-12 items-center justify-center rounded-full border border-jidoro-line bg-white text-jidoro-blue shadow-panel transition"
-          title="현재 위치"
-        >
-          <LocateFixed size={21} aria-hidden="true" />
-        </button>
-      </div>
-      <div className="absolute bottom-3 right-3 flex max-w-[calc(100%-1.5rem)] flex-col items-end gap-2 lg:bottom-4 lg:right-4">
-        {routeInfo ? (
+      <div className="map-bottom-controls absolute right-3 flex max-w-[calc(100%-1.5rem)] flex-col items-end gap-2 lg:right-4">
+        {routeInfo && !locationMessage ? (
           <p className="rounded-lg border border-blue-100 bg-white px-3 py-2 text-xs font-bold text-jidoro-blue shadow-sm">
-            경로 {routeInfo.distance} · 예상 {routeInfo.duration}
+            {routeInfo.source === "road" ? `경로 ${routeInfo.distance} · 예상 ${routeInfo.duration}` : routeInfo.title}
           </p>
         ) : null}
         {locationMessage ? (
-          <p className="rounded-lg border border-jidoro-line bg-white px-3 py-2 text-xs font-semibold text-jidoro-muted shadow-sm">
+          <p role="status" className="max-w-[360px] rounded-lg border border-jidoro-line bg-white px-3 py-2 text-xs font-semibold leading-5 text-jidoro-muted shadow-sm">
             {locationMessage}
           </p>
         ) : null}
@@ -461,19 +523,23 @@ function MapControls({
           <button
             type="button"
             onClick={onToggleRoadview}
-            className={`hidden size-9 items-center justify-center lg:flex lg:size-10 ${
+            disabled={!canRoadview}
+            aria-label="거리뷰"
+            aria-pressed={roadviewOpen}
+            className={`flex size-9 items-center justify-center lg:size-10 ${
               roadviewOpen ? "bg-blue-50 text-jidoro-blue" : "text-jidoro-ink hover:bg-jidoro-surface"
             }`}
             title="거리뷰"
           >
             <ScanSearch size={18} aria-hidden="true" />
           </button>
-          <div className="hidden h-px bg-jidoro-line lg:block" />
+          <div className="h-px bg-jidoro-line" />
           <button
             type="button"
             onClick={onZoomIn}
             className="flex size-9 items-center justify-center text-jidoro-ink hover:bg-jidoro-surface lg:size-10"
             title="확대"
+            aria-label="지도 확대"
           >
             <Plus size={18} aria-hidden="true" />
           </button>
@@ -483,6 +549,7 @@ function MapControls({
             onClick={onZoomOut}
             className="flex size-9 items-center justify-center text-jidoro-ink hover:bg-jidoro-surface lg:size-10"
             title="축소"
+            aria-label="지도 축소"
           >
             <Minus size={18} aria-hidden="true" />
           </button>
@@ -490,12 +557,14 @@ function MapControls({
         <button
           type="button"
           onClick={onCurrentLocation}
-          className="hidden size-10 items-center justify-center rounded-lg border border-jidoro-line bg-white text-jidoro-blue shadow-panel transition hover:border-jidoro-blue lg:inline-flex lg:size-11"
+          disabled={isLocating}
+          aria-label="현재 위치로 이동"
+          className="inline-flex size-10 items-center justify-center rounded-lg border border-jidoro-line bg-white text-jidoro-blue shadow-panel transition hover:border-jidoro-blue lg:size-11"
           title="현재 위치로 이동"
         >
           <LocateFixed size={20} aria-hidden="true" />
         </button>
       </div>
-    </>
+    </div>
   );
 }

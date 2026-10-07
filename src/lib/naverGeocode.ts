@@ -1,4 +1,5 @@
 import type { Place } from "@/types/place";
+import { isValidPoint } from "@/lib/placeUtils";
 
 interface NaverGeocodeAddress {
   roadAddress: string;
@@ -28,7 +29,7 @@ export function geocodeAddressToPlace(address: NaverGeocodeAddress, index: numbe
   const lng = Number(address.x);
 
   return {
-    id: `address-${address.x}-${address.y}-${index}`,
+    id: `address-${address.x}-${address.y}-${encodeURIComponent(displayAddress)}`,
     name: displayAddress,
     category: "주소",
     rawCategory: "주소",
@@ -38,8 +39,7 @@ export function geocodeAddressToPlace(address: NaverGeocodeAddress, index: numbe
     status: "주소 확인",
     rating: null,
     description: `${displayAddress} 주소 검색 결과입니다.`,
-    lat: Number.isFinite(lat) ? lat : undefined,
-    lng: Number.isFinite(lng) ? lng : undefined,
+    ...(address.x && address.y && isValidPoint({ lat, lng }) ? { lat, lng } : {}),
     hours: "해당 없음",
     phone: "해당 없음",
     parking: false,

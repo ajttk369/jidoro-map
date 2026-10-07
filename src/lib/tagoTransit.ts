@@ -1,496 +1,141 @@
 import type { TransitArrival, TransitLeg, TransitPlan } from "@/types/place";
+import { ApiError, fetchApiJson, publicError } from "@/lib/serverRequest";
 
-type AnyRecord = Record<string, unknown>;
-
-interface NearbyBusStation {
-  cityCode: string;
-  nodeId: string;
-  nodeName: string;
-}
-
-const TAGO_BASE = "https://apis.data.go.kr/1613000";
-
-function getServiceKey(...names: string[]) {
-  for (const name of names) {
-    const value = process.env[name];
-    if (value) {
-      return normalizeServiceKey(value);
-    }
-  }
-
-  return normalizeServiceKey(process.env.TAGO_SERVICE_KEY || "");
-}
-
-function normalizeServiceKey(value: string) {
-  try {
-    return decodeURIComponent(value.trim());
-  } catch {
-    return value.trim();
-  }
-}
-
-function asRecord(value: unknown): AnyRecord {
-  return value && typeof value === "object" ? (value as AnyRecord) : {};
-}
-
-function getString(record: AnyRecord, keys: string[]) {
+type RecordValue = Record<string, unknown>;
+type Station = { cityCode: string; nodeId: string; nodeName: string; area: string };
+const record = (value: unknown): RecordValue => value && typeof value === "object" ? value as RecordValue : {};
+function text(item: RecordValue, ...keys: string[]) {
   for (const key of keys) {
-    const value = record[key];
-    if (value !== undefined && value !== null && String(value).trim()) {
-      return String(value).trim();
-    }
+    const value = item[key];
+    if ((typeof value === "string" || typeof value === "number") && String(value).trim()) return String(value).trim().slice(0, 300);
   }
-
   return "";
 }
 
-function normalizeItems(data: unknown) {
-  const root = asRecord(data);
-  const response = asRecord(root.response);
-  const body = asRecord(response.body);
-  const items = asRecord(body.items);
-  const item = items.item;
-
-  if (Array.isArray(item)) {
-    return item.map(asRecord);
-  }
-
-  if (item && typeof item === "object") {
-    return [asRecord(item)];
-  }
-
-  return [];
+function serviceKey(name: string) {
+  const key = (process.env[name] || process.env.TAGO_SERVICE_KEY || "").trim();
+  if (!key) throw new ApiError(503, "TAGO 교통 정보 API 설정이 필요합니다.");
+  try { return decodeURIComponent(key); } catch { return key; }
 }
 
-async function fetchTagoJson(path: string, params: Record<string, string>, serviceKey: string) {
-  if (!serviceKey) {
-    return null;
-  }
-
-  const url = new URL(`${TAGO_BASE}/${path}`);
-  url.searchParams.set("serviceKey", serviceKey);
+async function tago(path: string, params: Record<string, string>, keyName: string, signal: AbortSignal) {
+  const url = new URL(`https://apis.data.go.kr/1613000/${path}`);
+  url.searchParams.set("serviceKey", serviceKey(keyName));
   url.searchParams.set("_type", "json");
-
-  for (const [key, value] of Object.entries(params)) {
-    if (value) {
-      url.searchParams.set(key, value);
-    }
+  url.searchParams.set("pageNo", "1");
+  url.searchParams.set("numOfRows", "10");
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+  const root = record(await fetchApiJson<unknown>(url, {}, signal));
+  const response = record(root.response);
+  if (!["00", "0"].includes(text(record(response.header), "resultCode"))) {
+    throw new ApiError(502, "TAGO 조회에 실패했습니다. 서비스 권한과 사용량을 확인해주세요.");
   }
-
-  const response = await fetch(url, { cache: "no-store" });
-
-  if (!response.ok) {
-    return null;
+  const body = record(response.body);
+  if (!Object.keys(body).length) throw new ApiError(502, "TAGO 응답 형식을 확인하지 못했습니다.");
+  const item = record(body.items).item;
+  if (Number(body.totalCount) > 0 && !Array.isArray(item) && (!item || typeof item !== "object")) {
+    throw new ApiError(502, "TAGO 조회 결과를 처리하지 못했습니다.");
   }
-
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
+  return Array.isArray(item) ? item.slice(0, 30).map(record) : item && typeof item === "object" ? [record(item)] : [];
 }
 
-function formatArrivalMinutes(value: string) {
-  const numeric = Number(value);
-
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    return { text: "도착 정보 확인", minutes: undefined };
-  }
-
-  const minutes = numeric > 120 ? Math.ceil(numeric / 60) : Math.ceil(numeric);
-  return { text: `${minutes}분 후`, minutes };
+async function stations(point: { lat: number; lng: number }, area: string, signal: AbortSignal): Promise<Station[]> {
+  const items = await tago("BusSttnInfoInqireService/getCrdntPrxmtSttnList", {
+    gpsLati: String(point.lat), gpsLong: String(point.lng)
+  }, "TAGO_BUS_STATION_SERVICE_KEY", signal);
+  return items.map(item => ({
+    cityCode: text(item, "citycode", "cityCode"), nodeId: text(item, "nodeid", "nodeId"),
+    nodeName: text(item, "nodenm", "nodeNm"), area
+  })).filter(item => item.cityCode && item.nodeId && item.nodeName).slice(0, 2);
 }
 
-function unique(values: string[]) {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
-}
-
-function extractSubwayKeywords(...queries: string[]) {
-  const keywords: string[] = [];
-
-  for (const query of queries) {
-    const compact = query.replace(/\s+/g, "");
-    const stationMatches = compact.match(/[가-힣A-Za-z0-9]+역/g) ?? [];
-    keywords.push(...stationMatches.map((match) => match.replace(/역$/, "")));
-
-    if (compact.includes("지하철") || compact.includes("역")) {
-      keywords.push(compact.replace(/역/g, "").replace(/지하철/g, ""));
-    }
-  }
-
-  return unique(keywords).slice(0, 6);
-}
-
-function formatRouteType(value: string, routeName: string) {
-  const normalized = value.trim();
-
-  if (normalized.includes("마을") || normalized === "3" || normalized === "30") {
-    return "마을버스";
-  }
-
-  if (normalized.includes("좌석")) {
-    return "좌석버스";
-  }
-
-  if (normalized.includes("급행") || normalized.includes("광역")) {
-    return "광역버스";
-  }
-
-  if (/^[0-9]{1,2}$/.test(routeName) || /^[0-9]{2,3}-[0-9]$/.test(routeName)) {
-    return "마을버스";
-  }
-
-  return normalized || "일반버스";
-}
-
-function addMinutes(date: Date, minutes: number) {
-  return new Date(date.getTime() + minutes * 60 * 1000);
-}
-
-function formatClock(date: Date) {
-  return date.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-}
-
-async function getNearbyBusStations(lat: number, lng: number): Promise<NearbyBusStation[]> {
-  const serviceKey = getServiceKey("TAGO_BUS_STATION_SERVICE_KEY");
-  const data = await fetchTagoJson(
-    "BusSttnInfoInqireService/getCrdntPrxmtSttnList",
-    {
-      gpsLati: String(lat),
-      gpsLong: String(lng),
-      numOfRows: "10",
-      pageNo: "1"
-    },
-    serviceKey
-  );
-
-  return normalizeItems(data)
-    .map((item) => ({
-      cityCode: getString(item, ["citycode", "cityCode", "ctyCode"]),
-      nodeId: getString(item, ["nodeid", "nodeId", "stationId"]),
-      nodeName: getString(item, ["nodenm", "nodeNm", "nodeName", "stationName"])
-    }))
-    .filter((station) => station.cityCode && station.nodeId && station.nodeName);
-}
-
-async function getBusArrivalsByStation(station: NearbyBusStation): Promise<TransitArrival[]> {
-  const serviceKey = getServiceKey("TAGO_BUS_ARRIVAL_SERVICE_KEY");
-  const data = await fetchTagoJson(
-    "ArvlInfoInqireService/getSttnAcctoArvlPrearngeInfoList",
-    {
-      cityCode: station.cityCode,
-      nodeId: station.nodeId,
-      numOfRows: "30",
-      pageNo: "1"
-    },
-    serviceKey
-  );
-
-  return normalizeItems(data).slice(0, 16).map((item) => {
-    const routeName = getString(item, ["routeno", "routeNo", "routename", "routeName", "busRouteNm"]);
-    const rawRouteType = getString(item, ["routetp", "routeTp", "routeType", "routeTypeCd", "routeTypeName"]);
-    const routeType = formatRouteType(rawRouteType, routeName);
-    const arrival = formatArrivalMinutes(getString(item, ["arrtime", "arrTime", "predictTime1", "predictTimeSec1"]));
-    const prevCount = getString(item, ["arrprevstationcnt", "arrPrevStationCnt", "locationNo1"]);
-    const vehicle = getString(item, ["vehicletp", "vehicleTp", "plateNo1", "vehicleNo"]);
-    const detail = [routeType, prevCount ? `${prevCount}정류장 전` : "", vehicle].filter(Boolean).join(" · ");
-
+async function busArrivals(station: Station, signal: AbortSignal): Promise<TransitArrival[]> {
+  const items = await tago("ArvlInfoInqireService/getSttnAcctoArvlPrearngeInfoList", {
+    cityCode: station.cityCode, nodeId: station.nodeId
+  }, "TAGO_BUS_ARRIVAL_SERVICE_KEY", signal);
+  return items.filter(item => text(item, "routeno", "routeNo")).map(item => {
+    const raw = text(item, "arrtime", "arrTime");
+    const seconds = raw ? Number(raw) : NaN;
+    const minutes = Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds / 60) : undefined;
+    const routeName = text(item, "routeno", "routeNo");
+    const routeType = text(item, "routetp", "routeTp");
+    const prevCount = text(item, "arrprevstationcnt", "arrPrevStationCnt");
+    const vehicle = text(item, "vehicletp", "vehicleTp");
     return {
-      type: "bus",
-      title: routeName ? `${routeName}번` : routeType,
-      stationName: station.nodeName,
-      routeName,
-      routeType,
-      arrivalText: arrival.text,
-      minutes: arrival.minutes,
-      detail,
-      vehicle
+      type: "bus", title: `${routeName}번`, stationName: station.nodeName, routeName, routeType,
+      arrivalText: minutes === undefined ? "도착 정보 없음" : minutes === 0 ? "곧 도착" : `${minutes}분 후`,
+      minutes, vehicle,
+      detail: [station.area, routeType, prevCount ? `${prevCount}정류장 전` : "", vehicle].filter(Boolean).join(" · ")
     };
   });
 }
 
-function subwayFallback(keyword: string): TransitArrival {
-  const stationName = keyword.endsWith("역") ? keyword : `${keyword}역`;
-
-  return {
-    type: "subway",
-    title: "지하철",
-    stationName,
-    routeName: "노선 확인",
-    arrivalText: "가까운 역",
-    minutes: 8,
-    detail: "TAGO 지하철 응답이 없어서 검색어 기준 역 후보로 표시합니다."
-  };
+async function subwayStations(keyword: string, area: string, signal: AbortSignal): Promise<TransitArrival[]> {
+  const items = await tago("SubwayInfoService/GetKwrdFndSubwaySttnList", {
+    subwayStationName: keyword
+  }, "TAGO_SUBWAY_SERVICE_KEY", signal);
+  return items.filter(item => text(item, "subwaystationname", "subwayStationName", "subwayStationNm", "stationName", "sttnNm"))
+    .slice(0, 4).map(item => {
+      const stationName = text(item, "subwaystationname", "subwayStationName", "subwayStationNm", "stationName", "sttnNm");
+      const routeName = text(item, "subwayroutename", "subwayrouteName", "subwayRouteName", "lineName", "routeNm");
+      return { type: "subway", title: routeName || "지하철", stationName, routeName,
+        arrivalText: "역 검색 결과", detail: `${area} 검색어 기준 · 열차 도착 시간 미제공` };
+    });
 }
 
-async function getSubwayStations(keyword: string): Promise<TransitArrival[]> {
-  const serviceKey = getServiceKey("TAGO_SUBWAY_SERVICE_KEY");
-  const normalizedKeyword = keyword.replace(/\s+/g, "").replace(/역$/, "");
-
-  if (!normalizedKeyword) {
-    return [];
-  }
-
-  const data = await fetchTagoJson(
-    "SubwayInfoService/GetKwrdFndSubwaySttnList",
-    {
-      subwayStationName: normalizedKeyword,
-      stationName: normalizedKeyword,
-      sttnNm: normalizedKeyword,
-      numOfRows: "8",
-      pageNo: "1"
-    },
-    serviceKey
-  );
-
-  const items = normalizeItems(data).slice(0, 6).map((item) => {
-    const stationName =
-      getString(item, [
-        "subwaystationname",
-        "subwayStationName",
-        "subwayStationNm",
-        "stationName",
-        "sttnNm"
-      ]) || `${normalizedKeyword}역`;
-    const lineName = getString(item, [
-      "subwayrouteName",
-      "subwayRouteName",
-      "subwayRouteNm",
-      "lineName",
-      "routeNm"
-    ]);
-
+function candidatePlans(arrivals: TransitArrival[], distance: string): TransitPlan[] {
+  const unique = Array.from(new Map(arrivals.map(item => [`${item.type}|${item.stationName}|${item.routeName}`, item])).values());
+  return unique.slice(0, 4).map((arrival, index) => {
+    const leg: TransitLeg = {
+      type: arrival.type, title: arrival.title, from: arrival.stationName, to: "목적지 연결 미확인",
+      duration: "이동 시간 미확인", detail: "정류장·역 조회 결과이며 목적지까지 운행 여부는 확인되지 않았습니다.",
+      color: arrival.type === "bus" ? "#65A30D" : "#10B981"
+    };
     return {
-      type: "subway" as const,
-      title: lineName || "지하철",
-      stationName,
-      routeName: lineName,
-      arrivalText: "역 정보 확인",
-      minutes: 8,
-      detail: "TAGO 지하철역 검색 결과"
+      id: `candidate-${index}`, label: arrival.type === "bus" ? "버스 후보" : "역 후보",
+      title: arrival.title, primaryType: arrival.type, duration: "미확인", durationMinutes: null,
+      distance: `직선 ${distance}`, fare: "미확인", departureTime: "미확인", arrivalTime: "미확인",
+      summary: `${arrival.stationName} · 목적지 연결 미확인`, legs: [leg], arrivals: [arrival]
     };
   });
-
-  return items.length > 0 ? items : [subwayFallback(normalizedKeyword)];
 }
 
-function buildBusLegs(bus: TransitArrival, originQuery: string, destinationQuery: string): TransitLeg[] {
-  return [
-    {
-      type: "walk",
-      title: "도보",
-      from: originQuery || "출발지",
-      to: bus.stationName,
-      duration: "3분",
-      detail: "가까운 정류장까지 이동",
-      color: "#94A3B8"
-    },
-    {
-      type: "bus",
-      title: bus.routeName ? `${bus.routeName}번` : bus.title,
-      from: bus.stationName,
-      to: destinationQuery || "도착지 주변 정류장",
-      duration: bus.arrivalText,
-      detail: bus.detail || "버스 이동 구간",
-      color: bus.routeType === "마을버스" ? "#84CC16" : "#65A30D"
-    },
-    {
-      type: "walk",
-      title: "도보",
-      from: "하차 정류장",
-      to: destinationQuery || "도착지",
-      duration: "5분",
-      detail: "도착지까지 이동",
-      color: "#94A3B8"
-    }
-  ];
-}
-
-function buildSubwayLegs(subway: TransitArrival, originQuery: string, destinationQuery: string): TransitLeg[] {
-  return [
-    {
-      type: "walk",
-      title: "도보",
-      from: originQuery || "출발지",
-      to: subway.stationName,
-      duration: "4분",
-      detail: "가까운 지하철역까지 이동",
-      color: "#94A3B8"
-    },
-    {
-      type: "subway",
-      title: subway.routeName || subway.title,
-      from: subway.stationName,
-      to: destinationQuery || "도착지 주변 역",
-      duration: "예상 13분",
-      detail: "지하철 이동 구간",
-      color: "#10B981"
-    },
-    {
-      type: "walk",
-      title: "도보",
-      from: "하차역",
-      to: destinationQuery || "도착지",
-      duration: "3분",
-      detail: "도착지까지 이동",
-      color: "#94A3B8"
-    }
-  ];
-}
-
-function buildPlan({
-  id,
-  label,
-  title,
-  primaryType,
-  durationMinutes,
-  distance,
-  fare,
-  summary,
-  legs,
-  arrivals
-}: Omit<TransitPlan, "duration" | "departureTime" | "arrivalTime">): TransitPlan {
-  const now = new Date();
-
-  return {
-    id,
-    label,
-    title,
-    primaryType,
-    duration: `${durationMinutes}분`,
-    durationMinutes,
-    distance,
-    fare,
-    departureTime: formatClock(now),
-    arrivalTime: formatClock(addMinutes(now, durationMinutes)),
-    summary,
-    legs,
-    arrivals
-  };
-}
-
-function buildTransitPlans(
-  arrivals: TransitArrival[],
-  originQuery: string,
-  destinationQuery: string,
-  distance: string
-) {
-  const buses = arrivals.filter((arrival) => arrival.type === "bus");
-  const subways = arrivals.filter((arrival) => arrival.type === "subway");
-  const plans: TransitPlan[] = [];
-
-  const fastestSubway = [...subways].sort((a, b) => (a.minutes ?? 99) - (b.minutes ?? 99))[0];
-  const fastestBus = [...buses].sort((a, b) => (a.minutes ?? 99) - (b.minutes ?? 99))[0];
-
-  if (fastestSubway) {
-    plans.push(
-      buildPlan({
-        id: "best-subway",
-        label: "최적",
-        title: fastestSubway.routeName || fastestSubway.title,
-        primaryType: "subway",
-        durationMinutes: Math.max(20, (fastestSubway.minutes ?? 8) + 12),
-        distance,
-        fare: "1,550원",
-        summary: `${fastestSubway.stationName} 기준 가장 가까운 지하철 후보입니다.`,
-        legs: buildSubwayLegs(fastestSubway, originQuery, destinationQuery),
-        arrivals: [fastestSubway]
-      })
-    );
-  }
-
-  if (fastestBus) {
-    plans.push(
-      buildPlan({
-        id: "best-bus",
-        label: fastestBus.routeType === "마을버스" ? "마을버스" : "버스",
-        title: fastestBus.routeName ? `${fastestBus.routeName}번` : fastestBus.title,
-        primaryType: "bus",
-        durationMinutes: Math.max(24, (fastestBus.minutes ?? 10) + 16),
-        distance,
-        fare: fastestBus.routeType === "마을버스" ? "1,200원" : "1,550원",
-        summary: `${fastestBus.stationName}에서 ${fastestBus.arrivalText} 도착 예정입니다.`,
-        legs: buildBusLegs(fastestBus, originQuery, destinationQuery),
-        arrivals: [fastestBus]
-      })
-    );
-  }
-
-  if (fastestBus && fastestSubway) {
-    plans.push(
-      buildPlan({
-        id: "mixed",
-        label: "버스+지하철",
-        title: `${fastestBus.routeName || "버스"} → ${fastestSubway.routeName || "지하철"}`,
-        primaryType: "mixed",
-        durationMinutes: Math.max(28, (fastestBus.minutes ?? 8) + (fastestSubway.minutes ?? 8) + 14),
-        distance,
-        fare: "1,650원",
-        summary: "버스와 지하철을 함께 이용하는 대중교통 후보입니다.",
-        legs: [
-          ...buildBusLegs(fastestBus, originQuery, "환승역").slice(0, 2),
-          ...buildSubwayLegs(fastestSubway, "환승역", destinationQuery).slice(1)
-        ],
-        arrivals: [fastestBus, fastestSubway]
-      })
-    );
-  }
-
-  return plans.sort((a, b) => a.durationMinutes - b.durationMinutes);
-}
-
-export async function getTransitArrivals({
-  start,
-  goal,
-  originQuery,
-  destinationQuery,
-  distance
-}: {
-  start: { lat: number; lng: number };
-  goal: { lat: number; lng: number };
-  originQuery: string;
-  destinationQuery: string;
-  distance: string;
+export async function getTransitArrivals({ start, goal, originQuery, destinationQuery, distance, signal }: {
+  start: { lat: number; lng: number }; goal: { lat: number; lng: number };
+  originQuery: string; destinationQuery: string; distance: string; signal: AbortSignal;
 }) {
   const arrivals: TransitArrival[] = [];
   const notices: string[] = [];
-
-  try {
-    const startStations = await getNearbyBusStations(start.lat, start.lng);
-    const goalStations = await getNearbyBusStations(goal.lat, goal.lng);
-    const targetStations = [...startStations.slice(0, 2), ...goalStations.slice(0, 2)];
-    const busArrivals = (
-      await Promise.all(targetStations.map((station) => getBusArrivalsByStation(station)))
-    ).flat();
-
-    arrivals.push(...busArrivals);
-
-    if (targetStations.length === 0) {
-      notices.push("주변 버스 정류장을 찾지 못했습니다.");
-    } else if (busArrivals.length === 0) {
-      notices.push("가까운 정류장은 찾았지만 도착 예정 버스가 없습니다.");
-    }
-  } catch {
-    notices.push("버스 도착 정보를 불러오지 못했습니다.");
-  }
-
-  try {
-    const subwayKeywords = extractSubwayKeywords(originQuery, destinationQuery);
-    const subwayArrivals = (
-      await Promise.all(subwayKeywords.map((keyword) => getSubwayStations(keyword)))
-    ).flat();
-    arrivals.push(...subwayArrivals);
-  } catch {
-    notices.push("지하철 정보를 불러오지 못했습니다.");
-  }
-
-  const slicedArrivals = arrivals.slice(0, 14);
-  const plans = buildTransitPlans(slicedArrivals, originQuery, destinationQuery, distance);
-
-  return {
-    arrivals: slicedArrivals,
-    legs: plans[0]?.legs ?? [],
-    plans,
-    notice: notices.join(" ")
-  };
+  let successfulLookups = 0;
+  const tasks: Array<Promise<TransitArrival[]>> = [start, goal].map((point, index) =>
+    stations(point, index === 0 ? "출발지 주변" : "도착지 주변", signal).then(async nearby => {
+      if (!nearby.length) { successfulLookups++; return []; }
+      const results = await Promise.allSettled(nearby.map(station => busArrivals(station, signal)));
+      const valid: TransitArrival[] = [];
+      for (const result of results) {
+        if (result.status === "fulfilled") { successfulLookups++; valid.push(...result.value); }
+        else notices.push(publicError(result.reason).message);
+      }
+      return valid;
+    }));
+  [originQuery, destinationQuery].forEach((query, index) => {
+    const keywords = [...new Set((query.match(/[가-힣A-Za-z0-9]+역/g) || []).map(value => value.replace(/역$/, "")))].slice(0, 2);
+    keywords.forEach(keyword => tasks.push(subwayStations(keyword, index === 0 ? "출발지" : "도착지", signal).then(items => {
+      successfulLookups++;
+      return items;
+    })));
+  });
+  const results = await Promise.allSettled(tasks);
+  results.forEach(result => {
+    if (result.status === "fulfilled") arrivals.push(...result.value);
+    else notices.push(publicError(result.reason).message);
+  });
+  if (signal.aborted) throw new ApiError(504, "교통 정보 조회 시간이 초과되었습니다.");
+  if (!successfulLookups) throw new ApiError(503, Array.from(new Set(notices)).join(" ") || "교통 정보를 조회하지 못했습니다.");
+  const unique = Array.from(new Map(arrivals.map(item => [`${item.type}|${item.stationName}|${item.routeName}|${item.arrivalText}|${item.detail}`, item])).values()).slice(0, 14);
+  const plans = candidatePlans(unique, distance);
+  if (!unique.length) notices.push("조회된 주변 정류장·역의 교통 정보가 없습니다.");
+  return { arrivals: unique, legs: plans[0]?.legs || [], plans,
+    notice: Array.from(new Set(notices)).join(" ") };
 }
+

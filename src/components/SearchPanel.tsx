@@ -16,6 +16,7 @@ interface SearchPanelProps {
   resultFilter: ResultFilter;
   categoryCounts: Record<string, number>;
   isLoading: boolean;
+  canSortDistance: boolean;
   errorMessage: string;
   hasSearched: boolean;
   copiedText: string;
@@ -50,6 +51,7 @@ export default function SearchPanel({
   resultFilter,
   categoryCounts,
   isLoading,
+  canSortDistance,
   errorMessage,
   hasSearched,
   copiedText,
@@ -70,6 +72,7 @@ export default function SearchPanel({
           <button
             type="button"
             onClick={() => onSetActiveTab("results")}
+            aria-pressed={activeTab === "results"}
             className={`h-8 rounded-lg text-sm font-extrabold transition lg:h-10 lg:rounded-xl ${
               activeTab === "results" ? "bg-white text-jidoro-blue shadow-sm" : "text-jidoro-muted hover:text-jidoro-ink"
             }`}
@@ -79,6 +82,7 @@ export default function SearchPanel({
           <button
             type="button"
             onClick={() => onSetActiveTab("favorites")}
+            aria-pressed={activeTab === "favorites"}
             className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg text-sm font-extrabold transition lg:h-10 lg:rounded-xl ${
               activeTab === "favorites" ? "bg-white text-rose-600 shadow-sm" : "text-jidoro-muted hover:text-jidoro-ink"
             }`}
@@ -92,7 +96,7 @@ export default function SearchPanel({
           <div>
             <p className="text-sm font-semibold text-jidoro-muted">{resultLabel}</p>
             <h1 className="text-2xl font-extrabold text-jidoro-ink lg:mt-1">
-              {isLoading ? "검색 중" : `${places.length}개`}
+              {isLoading ? "검색 중" : errorMessage ? "조회 실패" : `${places.length}개`}
             </h1>
           </div>
           {copiedText ? (
@@ -101,7 +105,7 @@ export default function SearchPanel({
             </span>
           ) : (
             <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-jidoro-blue">
-              실시간
+              {activeTab === "favorites" ? "저장됨" : "검색"}
             </span>
           )}
         </div>
@@ -121,6 +125,7 @@ export default function SearchPanel({
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-jidoro-muted"
             />
             <select
+              aria-label="검색 결과 종류"
               value={resultFilter}
               onChange={(event) => onSetResultFilter(event.target.value as ResultFilter)}
               className="h-10 w-full appearance-none rounded-xl border border-jidoro-line bg-white pl-9 pr-8 text-sm font-bold text-jidoro-ink outline-none transition focus:border-jidoro-blue focus:ring-4 focus:ring-blue-100"
@@ -139,12 +144,13 @@ export default function SearchPanel({
           <label className="relative">
             <select
               value={sortMode}
+              aria-label="결과 정렬"
               onChange={(event) => onSetSortMode(event.target.value as SortMode)}
               className="h-10 w-full appearance-none rounded-xl border border-jidoro-line bg-white px-3 pr-8 text-sm font-bold text-jidoro-ink outline-none transition focus:border-jidoro-blue focus:ring-4 focus:ring-blue-100"
             >
               {sortOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
+                <option key={option.value} value={option.value} disabled={option.value === "distance" && !canSortDistance}>
+                  {option.value === "distance" && !canSortDistance ? "거리순 · 위치 필요" : option.label}
                 </option>
               ))}
             </select>

@@ -1,4 +1,5 @@
 import type { Place } from "@/types/place";
+import { isValidPoint, safeHttpUrl } from "@/lib/placeUtils";
 
 export interface NaverLocalItem {
   title: string;
@@ -31,7 +32,7 @@ const categoryRules: Array<[Place["category"], string[]]> = [
 ];
 
 export function stripHtml(value: string) {
-  return value.replace(/<[^>]*>/g, "").replace(/&quot;/g, "\"").replace(/&amp;/g, "&").trim();
+  return (typeof value === "string" ? value : "").replace(/<[^>]*>/g, "").replace(/&quot;/g, "\"").replace(/&amp;/g, "&").trim();
 }
 
 export function normalizeCategory(rawCategory: string): Place["category"] {
@@ -46,14 +47,14 @@ export function normalizeCategory(rawCategory: string): Place["category"] {
 function parseNaverCoordinate(value: string) {
   const numericValue = Number(value);
 
-  if (!Number.isFinite(numericValue)) {
+  if (!value || !Number.isFinite(numericValue)) {
     return undefined;
   }
 
   return numericValue / 10000000;
 }
 
-export function toPlace(item: NaverLocalItem, index: number): Place {
+export function toPlace(item: NaverLocalItem): Place {
   const name = stripHtml(item.title);
   const rawCategory = stripHtml(item.category);
   const description = stripHtml(item.description);
@@ -61,7 +62,7 @@ export function toPlace(item: NaverLocalItem, index: number): Place {
   const lat = parseNaverCoordinate(item.mapy);
 
   return {
-    id: `${item.mapx}-${item.mapy}-${index}`,
+    id: `place-${encodeURIComponent(name)}-${item.mapx}-${item.mapy}`,
     name,
     category: normalizeCategory(rawCategory),
     rawCategory,
@@ -71,13 +72,12 @@ export function toPlace(item: NaverLocalItem, index: number): Place {
     status: "정보 확인 필요",
     rating: null,
     description: description || `${name}의 네이버 지역 검색 결과입니다.`,
-    lat,
-    lng,
+    ...(isValidPoint({ lat, lng }) ? { lat, lng } : {}),
     mapx: Number(item.mapx),
     mapy: Number(item.mapy),
     hours: "영업시간 정보 없음",
     phone: item.telephone ? stripHtml(item.telephone) : "전화번호 정보 없음",
     parking: false,
-    link: item.link
+    link: safeHttpUrl(item.link)
   };
 }
